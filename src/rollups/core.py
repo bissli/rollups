@@ -1052,3 +1052,61 @@ class DataSet:
         for row in self.container:
             if name in row:
                 row[rename] = row.pop(name, None)
+
+    #
+    # constructors
+    #
+
+    @classmethod
+    def from_empty(cls, columns: list[tuple[str, type]]) -> Self:
+        """Create a one-row DataSet holding each column's empty value.
+
+        Parameters
+        ----------
+        columns : list of tuple
+            (name, type) pairs defining the columns.
+
+        Returns
+        -------
+        DataSet
+            One row: '' for str, 0 for int, 0.0 for float, None else.
+        """
+        emptyrow = attrdict()
+        for col, typ in columns:
+            if typ == str:
+                emptyrow[col] = ''
+            elif typ == int:
+                emptyrow[col] = 0
+            elif typ == float:
+                emptyrow[col] = 0.
+            else:
+                emptyrow[col] = None
+        return cls([emptyrow], columns=columns)
+
+    @classmethod
+    def from_list(cls, rows, cols, typs) -> Self:
+        """Build a DataSet from rows of tuples.
+
+        Parameters
+        ----------
+        rows : iterable of tuple
+            One tuple per row, in `cols` order.
+        cols : list of str
+            Column names.
+        typs : list of type
+            Column types, positionally matched to `cols`.
+
+        Returns
+        -------
+        DataSet
+            Rows converted to dicts under the given names and types.
+
+        Raises
+        ------
+        ValueError
+            If `cols` and `typs` are of different length.
+        """
+        if len(cols) != len(typs):
+            raise ValueError('cols and typs length mismatch')
+        return cls([attrdict(list(zip(cols, row))) for row in rows],
+                   columns=list(zip(cols, typs)))
