@@ -217,6 +217,7 @@ def test_backfill_single_row():
     ds.backfill('val', 'copy')
     assert ds.cols == ['copy', 'val']
     assert list(ds.unwind('copy')) == [42]
+    assert list(ds.unwind('val')) == [42]
 
     inplace = DataSet([{'val': 42}])
     inplace.backfill('val')
