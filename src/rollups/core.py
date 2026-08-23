@@ -257,6 +257,25 @@ class DataSet:
             except ValueError:
                 pass
 
+    def pop(self, col, val) -> attrdict | None:
+        """Remove and return the first row whose `col` holds `val`.
+
+        Parameters
+        ----------
+        col : str
+            Column to read.
+        val : Any
+            Value to match.
+
+        Returns
+        -------
+        attrdict or None
+            The removed row, or None where nothing matched.
+        """
+        for i, row in enumerate(self.container):
+            if row[col] == val:
+                return self.container.pop(i)
+
     def __add__(self, other) -> Self:
         ds = self.copy()
         ds.extend(other)
