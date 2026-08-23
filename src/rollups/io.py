@@ -208,3 +208,62 @@ def read_csv_rows(file_or_name, **kw) -> tuple[list, list]:
     if opened:
         f.close()
     return rows, list(zip(columns, types))
+
+
+def _emit(dataset, file_handle, header=True, **kwargs):
+    """Render the dataset into an open csv writer."""
+    def _format(row, col, typ):
+        if row[col] is None:
+            return ''
+        return row[col]
+
+    def _fmt_label(col):
+        return col
+
+    _format = kwargs.pop('format', _format)
+    _format_label = kwargs.pop('format_label', _fmt_label)
+
+    cols = [_format_label(c) for c, t in dataset.columns]
+
+    writer = csv.writer(file_handle)
+    if header:
+        writer.writerow(cols)
+    for row in dataset:
+        try:
+            writer.writerow([_format(row, c, t) for c, t in dataset.columns])
+        except Exception as exc:
+            logger.error(f'Problem with this row:\n{str(row)}')
+            logger.exception(exc)
+            raise
+
+
+# Notes:
+# - arg=1 is path_or_buf. It survived the move from a method
+#   because (self, path) became (dataset, path); reordering
+#   these two parameters would silently randomize the wrong one.
+@on_error_randomize(arg=1)
+def write_csv_file(dataset: 'DataSet', path_or_buf, **kwargs) -> None:
+    """Write the DataSet to a csv file or buffer.
+
+    Parameters
+    ----------
+    path_or_buf : str or file-like
+        Path to write, or a buffer to write into.
+    **kwargs
+        `header` writes the column names, default True. `format`
+        and `format_label` override how a value and a column name
+        are rendered.
+
+    Notes
+    -----
+    - Where the path cannot be written, a randomized name is tried
+      once before giving up.
+    - A None value is written as an empty field.
+    """
+    dataset.ensure_types()
+
+    if isinstance(path_or_buf, str):
+        with pathlib.Path(path_or_buf).open('w', newline='') as file_handle:
+            _emit(dataset, file_handle, **kwargs)
+    else:
+        _emit(dataset, path_or_buf, **kwargs)
