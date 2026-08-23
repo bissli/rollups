@@ -1123,7 +1123,7 @@ def test_diff_datasets_preserves_full_rows_in_same():
 def test_diff_datasets_preserves_full_rows_in_only_lists():
     """An only_in row is the whole source row, not a key projection.
 
-    Mutation: appending attrdict(zip(keycols, key)) at
+    Mutation: appending lazydict(zip(keycols, key)) at
         join.py and 3005, dropping the uncompared columns.
     Oracle: 'data1' and 'data2', neither a key nor a compare column.
     """

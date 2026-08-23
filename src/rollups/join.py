@@ -12,7 +12,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from libb import OrderedSet
-from libb import lazydict as attrdict
+from libb import lazydict
 
 if TYPE_CHECKING:
     from .core import DataSet
@@ -136,7 +136,7 @@ def join_datasets(adataset: 'DataSet', akey: tuple[str],
         raise ValueError(f'This join type is not supported {jointype}')
 
     def merge_rows(arow, brow):
-        jrow = attrdict()
+        jrow = lazydict()
         _arow = {f'{c}{amod}': arow.get(c) for c in acol}
         _brow = {f'{c}{bmod}': brow.get(c) for c in bcol}
         for k in set(list(_arow.keys()) + list(_brow.keys())):
@@ -216,7 +216,7 @@ def diff_datasets(ds1, ds2, keycols, comparecols):
         ds1_row = ds1_map[key]
         ds2_row = ds2_map.pop(key, None)
         if ds2_row is not None:
-            diff_row = attrdict(zip(keycols, key))
+            diff_row = lazydict(zip(keycols, key))
             for col in comparecols:
                 if ds1_row[col] != ds2_row[col]:
                     diff_row[col] = (ds1_row[col], ds2_row[col])

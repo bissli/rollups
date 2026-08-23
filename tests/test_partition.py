@@ -69,7 +69,7 @@ def test_partition_by_multiple_attributes(region_dataset):
 def test_partition_by_reference():
     """Verify partition results hold the original rows, not copies.
 
-    Mutation: appending attrdict(row) rather than row, giving each group
+    Mutation: appending lazydict(row) rather than row, giving each group
         its own row objects.
     Oracle: writes made through the group, read back on the source.
     """

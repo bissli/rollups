@@ -52,7 +52,7 @@ class TestCopySemantics:
     def test_copy_shares_row_objects(self, basic_dataset):
         """Verify copy() hands over the same row objects.
 
-        Mutation: copy() rebuilding rows as `attrdict(row)`, which is
+        Mutation: copy() rebuilding rows as `lazydict(row)`, which is
             shallowcopy's semantics.
         Oracle: the 999 written through the copy, read back from the
             original row.
@@ -76,7 +76,7 @@ class TestCopySemantics:
         assert basic_dataset[0] is not deep[0]
 
     def test_shallowcopy_creates_new_row_objects(self, basic_dataset):
-        """Verify shallowcopy() wraps every row in a new attrdict.
+        """Verify shallowcopy() wraps every row in a new lazydict.
 
         Mutation: shallowcopy() reusing the source rows
             (`ds.container = list(self.container)`).
@@ -95,7 +95,7 @@ class TestMutableValueBehavior:
         """Verify copy() leaves a list value shared.
 
         Mutation: copy() deep-copying each row
-            (`attrdict(copy.deepcopy(dict(row)))`).
+            (`lazydict(copy.deepcopy(dict(row)))`).
         Oracle: the 'x' appended through the copy, read from the
             original list.
         """
@@ -122,7 +122,7 @@ class TestMutableValueBehavior:
         """Verify shallowcopy() shares the values inside its new rows.
 
         Mutation: shallowcopy() deep-copying each row
-            (`attrdict(copy.deepcopy(dict(row)))`).
+            (`lazydict(copy.deepcopy(dict(row)))`).
         Oracle: list identity, plus the appended 'modified' read from
             the original.
         """
@@ -147,7 +147,7 @@ class TestMutableValueBehavior:
         """Verify copy() leaves a dict value shared.
 
         Mutation: copy() deep-copying each row
-            (`attrdict(copy.deepcopy(dict(row)))`).
+            (`lazydict(copy.deepcopy(dict(row)))`).
         Oracle: dict identity, plus the hand-set 10 read from the
             original.
         """
@@ -161,7 +161,7 @@ class TestMutableValueBehavior:
         """Verify shallowcopy() leaves a dict value shared.
 
         Mutation: shallowcopy() deep-copying each row
-            (`attrdict(copy.deepcopy(dict(row)))`).
+            (`lazydict(copy.deepcopy(dict(row)))`).
         Oracle: dict identity, plus the hand-set 10 read from the
             original.
         """
@@ -179,7 +179,7 @@ class TestComplexNestedStructures:
         """Verify copy() shares a value nested three levels down.
 
         Mutation: copy() deep-copying each row
-            (`attrdict(copy.deepcopy(dict(row)))`).
+            (`lazydict(copy.deepcopy(dict(row)))`).
         Oracle: the 4 appended through the copy, read from the
             original's innermost list.
         """
@@ -208,7 +208,7 @@ class TestComplexNestedStructures:
         """Verify shallowcopy() shares a nested structure whole.
 
         Mutation: shallowcopy() deep-copying each row
-            (`attrdict(copy.deepcopy(dict(row)))`).
+            (`lazydict(copy.deepcopy(dict(row)))`).
         Oracle: identity of the nested dict, plus the appended 4 read
             from the original.
         """
@@ -225,7 +225,7 @@ class TestNestedDatasets:
         """Verify copy() shares a DataSet held in a row.
 
         Mutation: copy() deep-copying each row
-            (`attrdict(copy.deepcopy(dict(row)))`).
+            (`lazydict(copy.deepcopy(dict(row)))`).
         Oracle: DataSet identity, plus the hand-counted 3 rows after
             one append through the copy.
         """
@@ -255,7 +255,7 @@ class TestNestedDatasets:
         """Verify shallowcopy() shares a DataSet held in a row.
 
         Mutation: shallowcopy() deep-copying each row
-            (`attrdict(copy.deepcopy(dict(row)))`).
+            (`lazydict(copy.deepcopy(dict(row)))`).
         Oracle: DataSet identity, plus the hand-counted 3 rows after
             one append through the copy.
         """
@@ -370,10 +370,10 @@ class TestCommonCopyBehavior:
         assert result.cols == ['name', 'age']
 
     def test_single_row(self, copy_method):
-        """Verify a one-row copy keeps the row as an attrdict.
+        """Verify a one-row copy keeps the row as an lazydict.
 
         Mutation: rows rebuilt as plain dicts (`dict(row)` in place of
-            `attrdict(...)`), which loses attribute access.
+            `lazydict(...)`), which loses attribute access.
         Oracle: hand-computed 42 read by key and by attribute.
         """
         ds = DataSet([{'value': 42}])
@@ -561,7 +561,7 @@ class TestTypesConvertedFlag:
 def test_copy_multiple_times():
     """Verify copies of copies all keep pointing at the same row.
 
-    Mutation: copy() rebuilding rows as `attrdict(row)`, which would
+    Mutation: copy() rebuilding rows as `lazydict(row)`, which would
         break the chain at the first copy.
     Oracle: the hand-set 10 read from the original and from both
         sibling copies.

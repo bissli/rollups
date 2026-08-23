@@ -7,10 +7,11 @@ dict.
 
 Notes
 -----
-- `attrdict`, `oset` and `emptydict` are libb's names, not this
-  package's. Import them from libb: `from libb import lazydict as
-  attrdict`, `OrderedSet as oset`, and `emptydict`. Note that a row is
-  a `lazydict`, which is not the same class as `libb.attrdict`.
+- A row is a `libb.lazydict`: a dict with attribute access that also
+  calls a stored callable, which is what gives a row a computed
+  column. It subclasses `libb.attrdict` and is not that class.
+- `lazydict`, `OrderedSet` and `emptydict` are libb's names, not this
+  package's, and are not re-exported here. Import them from libb.
 - See docs/README.md for the guides.
 """
 from .aggregate import bucket_dataset, flatten_dataset, pivot_dataset

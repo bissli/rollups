@@ -273,7 +273,7 @@ def test_filter_preserves_columns(basic_dataset):
 def test_filter_all_match(basic_dataset):
     """Verify an always-true predicate keeps the same row objects.
 
-    Mutation: the inplace arm rebuilding rows as new attrdicts instead
+    Mutation: the inplace arm rebuilding rows as new lazydicts instead
         of reusing them, breaking aliasing a caller relies on.
     Oracle: identity of the five row objects captured before the call.
     """

@@ -244,7 +244,7 @@ def test_add_column_values_length_mismatch(values, dataset_len, error_match):
 # --- Callable Value Tests ---
 
 def test_add_column_callable_depends_on_multiple_columns():
-    """Verify the callable receives the live row as an attrdict.
+    """Verify the callable receives the live row as an lazydict.
 
     Mutation: passing a plain dict or a copy of the row to the callable
         at core.py, which breaks attribute access.

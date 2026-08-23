@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 from opendate import Date, DateTime, Time
 
 import libb
-from libb import lazydict as attrdict
+from libb import lazydict
 
 from .types import smart_type
 
@@ -171,7 +171,7 @@ def bucket_dataset(dataset: 'DataSet', keycols: str | list[str],
     buckets = []
     for key, grouped in itertools.groupby(data, keyfn):
         rows = list(grouped)
-        bucket = attrdict(zip(keycols, key))
+        bucket = lazydict(zip(keycols, key))
         for col, op, filt, alias in aggcols:
             bucket[alias] = safe(op)(filt(rows))
         buckets.append(bucket)
@@ -240,14 +240,14 @@ def flatten_dataset(dataset: 'DataSet', kept, flattened,
     if not kept:
         for row in dataset.container:
             for k in flattened:
-                ds.append(attrdict({key: k, val: row[k]}))
+                ds.append(lazydict({key: k, val: row[k]}))
         return ds
     for keeps, grouped in itertools.groupby(dataset.container, operator.attrgetter(*kept)):
         if not isinstance(keeps, list | tuple):
             keeps = [keeps]
         for row in grouped:
             for k in flattened:
-                ds.append(attrdict(list(zip(kept, keeps)), **{key: k, val: row[k]}))
+                ds.append(lazydict(list(zip(kept, keeps)), **{key: k, val: row[k]}))
     return ds
 
 

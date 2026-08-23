@@ -17,7 +17,7 @@ from opendate import Date, DateTime, Time
 from prettytable import PrettyTable
 
 import libb
-from libb import lazydict as attrdict
+from libb import lazydict
 
 from . import aggregate, io, join
 # Re-exported so a caller importing from this module keeps working, and
@@ -101,7 +101,7 @@ class DataSet:
 
     def __init__(
         self,
-        container: list[attrdict] = None,
+        container: list[lazydict] = None,
         columns: list[tuple[str, type]] = None,
         cols: list[str] | None = None,
         typs: list[type] | None = None,
@@ -116,7 +116,7 @@ class DataSet:
 
         Parameters
         ----------
-        container : list of attrdict or DataSet, default None
+        container : list of lazydict or DataSet, default None
             Row dictionaries, or another DataSet to copy.
         columns : list of tuple, default None
             (column_name, column_type) pairs.
@@ -155,7 +155,7 @@ class DataSet:
             self._summary_args = container._summary_args[:]
             self._types_converted = container._types_converted
         else:
-            self.container = [row if isinstance(row, attrdict) else attrdict(row) for row in container]
+            self.container = [row if isinstance(row, lazydict) else lazydict(row) for row in container]
             self.columns = list(columns) \
                 if columns \
                 else DataSet.guess_columns(self.container, cols=cols,
@@ -181,19 +181,19 @@ class DataSet:
     # container-like methods
     #
 
-    def append(self, obj: attrdict, validate: bool = False) -> None:
+    def append(self, obj: lazydict, validate: bool = False) -> None:
         """Append a dict row to the dataset.
 
         Parameters
         ----------
-        obj : attrdict
+        obj : lazydict
             Row to append.
         validate : bool, default False
             If True, convert types now. If False, conversion waits for
             the first read, which is faster but defers any error.
         """
         if validate and self.columns and self._check_types:
-            converted = attrdict()
+            converted = lazydict()
             for name, typ in self.columns:
                 val = obj.get(name)
                 converted[name] = _convert_value(val, typ)
@@ -210,7 +210,7 @@ class DataSet:
                 self._types_converted = False
 
     @ensure_types_converted
-    def __getitem__(self, key: int) -> attrdict:
+    def __getitem__(self, key: int) -> lazydict:
         # if they ask for a slice, return a new Dataset
         if isinstance(key, slice):
             ds = self.copy()
@@ -231,12 +231,12 @@ class DataSet:
     def __iter__(self):
         return self.container.__iter__()
 
-    def extend(self, sequence: list[attrdict], validate: bool = False) -> None:
+    def extend(self, sequence: list[lazydict], validate: bool = False) -> None:
         """Extend the dataset by a sequence of rows or another DataSet.
 
         Parameters
         ----------
-        sequence : list of attrdict or DataSet
+        sequence : list of lazydict or DataSet
             Rows to add.
         validate : bool, default False
             If True, convert types now. If False, conversion waits for
@@ -244,7 +244,7 @@ class DataSet:
         """
         if validate and self.columns and self._check_types:
             for obj in sequence:
-                converted = attrdict()
+                converted = lazydict()
                 for name, typ in self.columns:
                     val = obj.get(name)
                     converted[name] = _convert_value(val, typ)
@@ -323,7 +323,7 @@ class DataSet:
             except ValueError:
                 pass
 
-    def pop(self, col, val) -> attrdict | None:
+    def pop(self, col, val) -> lazydict | None:
         """Remove and return the first row whose `col` holds `val`.
 
         Parameters
@@ -335,7 +335,7 @@ class DataSet:
 
         Returns
         -------
-        attrdict or None
+        lazydict or None
             The removed row, or None where nothing matched.
         """
         for i, row in enumerate(self.container):
@@ -420,7 +420,7 @@ class DataSet:
 
         Notes
         -----
-        - Each row is a new attrdict, so adding or removing a column on
+        - Each row is a new lazydict, so adding or removing a column on
           one dataset leaves the other alone.
         - The values inside the rows are still shared, so mutating a
           list, dict or DataSet held in a row is visible from both.
@@ -428,7 +428,7 @@ class DataSet:
           for a deep copy.
         """
         ds = self._copy_structure()
-        ds.container = [] if empty else [attrdict(row) for row in self.container]
+        ds.container = [] if empty else [lazydict(row) for row in self.container]
         ds._types_converted = getattr(self, '_types_converted', False)
         return ds
 
@@ -451,7 +451,7 @@ class DataSet:
             self.convert_container_types()
             self._types_converted = True
         ds = self._copy_structure()
-        ds.container = [attrdict(copy.deepcopy(dict(row))) for row in self.container]
+        ds.container = [lazydict(copy.deepcopy(dict(row))) for row in self.container]
         ds._types_converted = True
         return ds
 
@@ -808,10 +808,10 @@ class DataSet:
         else:
             result = self.copy(empty=True)
             if self._types_converted:
-                result.container = [attrdict(copy.deepcopy(dict(row))) for row in filtered_rows]
+                result.container = [lazydict(copy.deepcopy(dict(row))) for row in filtered_rows]
                 result._types_converted = True
             else:
-                result.container = [attrdict(row) for row in filtered_rows]
+                result.container = [lazydict(row) for row in filtered_rows]
             return result
 
     def partition(self, partition_func) -> defaultdict[Any, Self]:
@@ -881,7 +881,7 @@ class DataSet:
         label='Total',
         columns: list[str] | None = None,
         cols_funcs: list[tuple[str, Callable]] | None = None,
-    ) -> attrdict:
+    ) -> lazydict:
         """Compute the summary row now.
 
         Parameters
@@ -898,7 +898,7 @@ class DataSet:
 
         Returns
         -------
-        attrdict
+        lazydict
             The summary row, carrying `__is_summary__` True and None in
             every column not aggregated.
         """
@@ -913,11 +913,11 @@ class DataSet:
                 summary[label_col] = label
             summary.update((c, None) for c in self.cols if c not in summary)  # fill empty vals
         else:
-            summary = attrdict((c, None) for c in self.cols)
+            summary = lazydict((c, None) for c in self.cols)
         return summary
 
     @property
-    def summary(self) -> attrdict:
+    def summary(self) -> lazydict:
         """The summary row, recomputed on every read.
 
         Notes
@@ -1131,7 +1131,7 @@ class DataSet:
         DataSet
             One row: '' for str, 0 for int, 0.0 for float, None else.
         """
-        emptyrow = attrdict()
+        emptyrow = lazydict()
         for col, typ in columns:
             if typ == str:
                 emptyrow[col] = ''
@@ -1168,7 +1168,7 @@ class DataSet:
         """
         if len(cols) != len(typs):
             raise ValueError('cols and typs length mismatch')
-        return cls([attrdict(list(zip(cols, row))) for row in rows],
+        return cls([lazydict(list(zip(cols, row))) for row in rows],
                    columns=list(zip(cols, typs)))
 
     @classmethod
@@ -1206,7 +1206,7 @@ class DataSet:
                 if isinstance(val, float) and np.isnan(val):
                     row[key] = None
 
-        rows = [attrdict(row) for row in rows]
+        rows = [lazydict(row) for row in rows]
         return cls(rows, columns=list(_columns.items()))
 
     def convert_container_types(self):
@@ -1224,13 +1224,13 @@ class DataSet:
 
         self._types_converted = True
 
-    def _convert_row(self, row: attrdict,
+    def _convert_row(self, row: lazydict,
                      cols_to_convert: list[tuple[str, type]]) -> None:
         """Convert one row in place to the declared column types.
 
         Parameters
         ----------
-        row : attrdict
+        row : lazydict
             Row to convert. Mutated in place.
         cols_to_convert : list of tuple
             (name, type) pairs to act on, from `_converted_columns()`.
@@ -1510,7 +1510,7 @@ class DataSet:
     def add_empty_row(self):
         """Append a row holding None in every column.
         """
-        empty = attrdict(dict.fromkeys(self.cols))
+        empty = lazydict(dict.fromkeys(self.cols))
         self.append(empty)
         logger.debug('Added empty (null value) row')
 

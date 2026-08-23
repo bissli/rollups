@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from opendate import Date, DateTime, Time
 
 import libb
-from libb import lazydict as attrdict
+from libb import lazydict
 
 if TYPE_CHECKING:
     from .core import DataSet
@@ -100,7 +100,7 @@ def read_csv_rows(file_or_name, **kw) -> tuple[list, list]:
     Returns
     -------
     tuple
-        (rows, columns), where rows is a list of attrdict and columns
+        (rows, columns), where rows is a list of lazydict and columns
         is a list of (name, type) pairs. The caller builds the
         container, so this layer never names a container class.
 
@@ -207,7 +207,7 @@ def read_csv_rows(file_or_name, **kw) -> tuple[list, list]:
         if not row:  # auto-skip empty rows
             continue
         pyvals = list(itertools.starmap(_parse, zip(row, types)))
-        rows.append(attrdict(list(zip(columns, pyvals))))
+        rows.append(lazydict(list(zip(columns, pyvals))))
     if opened:
         f.close()
     return rows, list(zip(columns, types))

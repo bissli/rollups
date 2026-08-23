@@ -111,7 +111,7 @@ def test_row_callable_is_a_computed_column():
     computed column. Subscript and `.get` hand back the callable
     itself, which is what lets conversion and the writers see it.
 
-    Mutation: binding `attrdict` to `libb.attrdict` rather than
+    Mutation: building rows as `libb.attrdict` rather than
         `libb.lazydict`, so the callable is returned instead of called.
     Oracle: hand-computed 1 + 2 against the three access styles.
     """
@@ -1345,7 +1345,7 @@ def test_convert_datetime_from_stdlib_with_business_method_call():
 def test_creation_with_circular_reference_in_row():
     """Verify a self-referencing row is stored as is, not walked.
 
-    Mutation: the constructor rebuilding rows (attrdict(row) on every
+    Mutation: the constructor rebuilding rows (lazydict(row) on every
         row, or a deepcopy), which breaks the self-reference or the
         row's identity.
     Oracle: identity of the row object and of the cycle it holds.
