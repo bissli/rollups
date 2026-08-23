@@ -389,3 +389,70 @@ class DataSet:
         ds.container = [attrdict(copy.deepcopy(dict(row))) for row in self.container]
         ds._types_converted = True
         return ds
+
+    def dedupe(self, keys, filter_fn=None):
+        """Remove duplicate rows by key.
+
+        Parameters
+        ----------
+        keys : str or list of str
+            Column(s) whose combined value identifies a duplicate.
+        filter_fn : Callable or None, default None
+            Chooses which row of a duplicate group to keep. None keeps
+            the first occurrence.
+
+        Returns
+        -------
+        DataSet
+            New dataset holding one row per distinct key.
+
+        Notes
+        -----
+        - Will NOT work where a key holds an unhashable value such as a
+          list or a nested DataSet.
+        - Where `filter_fn` matches no row in a group, the group's first
+          row is kept.
+        """
+        keys = keys if isinstance(keys, list | tuple) else [keys]
+
+        if filter_fn is None:
+            d = {}
+            for i, row in enumerate(self.unwind(*keys)):
+                if row not in d:
+                    d[row] = i
+            ix = set(d.values())
+            uq = [row for i, row in enumerate(self) if i in ix]
+        else:
+            groups = {}
+            for row in self:
+                key_vals = tuple(row[k] for k in keys)
+                if key_vals not in groups:
+                    groups[key_vals] = []
+                groups[key_vals].append(row)
+
+            uq = []
+            for key_vals in sorted(groups.keys()):
+                group_rows = groups[key_vals]
+                matched = False
+                for row in group_rows:
+                    if filter_fn(row):
+                        uq.append(row)
+                        matched = True
+                        break
+                if not matched:
+                    uq.append(group_rows[0])
+
+        return self.__class__(uq, cols=self.cols, typs=self.typs)
+
+    def itemize(self):
+        """Split each row into a DataSet of its own.
+
+        Returns
+        -------
+        list of DataSet
+            One single-row dataset per row, carrying the same columns.
+        """
+        tods = lambda row: self.__class__([row], cols=self.cols, typs=self.typs)
+        ncols = len(self.cols)
+        return [tods(dict(zip(self.cols, x if ncols > 1 else (x,))))
+                for x in self.unwind(*self.cols)]
