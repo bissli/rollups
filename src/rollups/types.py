@@ -11,8 +11,10 @@ Notes
 """
 
 
+import datetime
 import logging
 
+from opendate import Date, DateTime
 
 import libb
 
@@ -69,3 +71,33 @@ def infer_numeric_type(val: str) -> type | None:
         return float
 
     return None
+
+
+def smart_type(val, infer_numeric_strings: bool = False):
+    """Infer type from a value, preserving explicit DateTime/Date distinctions.
+
+    Parameters
+    ----------
+    val : Any
+        Value to infer the type from.
+    infer_numeric_strings : bool, default False
+        If True, a numeric string yields int or float rather than str.
+
+    Returns
+    -------
+    type
+        Inferred type for the value.
+    """
+    if val.__class__ == DateTime:
+        return DateTime
+    if val.__class__ == Date:
+        return Date
+    if val.__class__ == datetime.datetime \
+            and val.hour == val.minute == val.second == val.microsecond == 0:
+        logger.warning('Converting midnight datetime.datetime to Date type - incorrectly typing DateTime columns')
+        return Date
+    if infer_numeric_strings and isinstance(val, str):
+        numeric_type = infer_numeric_type(val)
+        if numeric_type is not None:
+            return numeric_type
+    return val.__class__
