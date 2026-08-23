@@ -7,17 +7,14 @@ addressed by field name, and each column declares a Python type that its
 values convert to on first read. The container adds filtering, sorting,
 grouping, joining, pivoting, and summarizing.
 
-**Iteration is the primary access pattern, not a fallback.** A DataFrame
-stores each column as an array, so operations take the form of vectors
-and masks and a row is a derived view. Here the row is the primary
-object and a `for` loop is the expected way to reach it.
+A DataFrame stores each column as an array, so a row is a view built on
+demand and operations are written as vectors and masks. A `DataSet`
+stores each row as a dict, so `for row in rows` reads the stored object.
 
-A DataFrame suits columnar work: rolling windows, matrix operations,
-large row counts. A `DataSet` suits records that arrive as dictionaries
-- a database cursor, a json payload, a csv - where typed fields and
-SQL-shaped operations matter more than vectorized expression.
-Conversion runs in both directions where one step needs the other
-shape.
+Use a DataFrame for rolling windows, matrix operations, and large row
+counts. Use a `DataSet` for records that arrive as dictionaries - a
+database cursor, a json payload, a csv - and for SQL-shaped operations
+on them. `dataframe()` and `from_dataframe()` convert between the two.
 
 ```python
 from rollups import DataSet
@@ -34,7 +31,7 @@ for row in rows:
         print(f'{row.name} is over by {row.amount - 100:.2f}')
 
 rows[0].name                       # 'ana'
-rows[0]['name']                    # 'ana' - either spelling reads
+rows[0]['name']                    # 'ana' - attribute or key
 rows.sort_data('-amount')          # SQL order by, descending
 rows.bucket('group', ['amount'])   # a: 165.75, b: 80.0
 ```
@@ -63,9 +60,9 @@ python -m pytest -q
 
 ## Typed columns
 
-Columns exist so the values in each row arrive parsed. A `'120.5'` read
-from a csv comes back as a `float`, not a string to convert at each use.
-The rows stay dicts; the types only describe what they hold.
+A column declares the type its values convert to, so a `'120.5'` read
+from a csv comes back as a `float`. The rows remain dicts. The types are
+metadata on the container.
 
 A column is a `(name, type)` pair, declared or inferred:
 
@@ -77,9 +74,9 @@ DataSet(records)                             # types inferred from the rows
 DataSet(records, infer_numeric_strings=True)   # '120.5' infers as float
 ```
 
-Conversion is **lazy**: nothing converts at construction, and the first
-read of any row converts the whole container. Any class taking one
-argument works as a column type, with nothing to register.
+Conversion is lazy: nothing converts at construction, and the first read
+of any row converts the whole container. Any class taking one argument
+serves as a column type.
 
 [Getting started](docs/getting-started.md) covers the type system, the
 column operations, and the three kinds of copy.
@@ -130,8 +127,8 @@ wins unless it is `None`. See [Joining](docs/joins.md).
 
 ## Screening
 
-A screen filters by a small query language, one query per column, so a
-saved filter can travel as text from a config file or a web form:
+A screen is a query language with one query per column. A screen is
+text, so it can come from a config file or a web form:
 
 ```python
 from rollups import apply_screen
@@ -153,11 +150,11 @@ rows.json(raw=True)                   # '[{"name": "ana"}]'
 
 A csv header field may carry a type suffix - `name:s`, `age:i`,
 `score:f`, `on:b`, `when:d` - and a field without one reads as `str`. A
-line that will not decode is logged and skipped, so one bad row does not
-lose the file.
+line that will not decode is logged and skipped, and the read
+continues.
 
-Excel goes through a registered backend. This package never imports
-one, so nothing here depends on a workbook library:
+Excel goes through a backend the caller registers. This package imports
+no workbook library:
 
 ```python
 import rollups
@@ -194,21 +191,22 @@ again gives the current total. See [Summaries and output](docs/summaries.md).
 
 ## Working with pandas
 
-A step that wants a frame can have one. `DataSet.dataframe()` and
-`DataSet.from_dataframe()` cross between the two representations, so a
-columnar step can sit in the middle of row-shaped work.
+`DataSet.dataframe()` and `DataSet.from_dataframe()` convert between the
+two representations, so a columnar step can run inside row-shaped work.
 
-Separately, `rollups.frame` holds four functions that take and return
-`pandas.DataFrame` and never touch `DataSet` at all:
+`rollups.frame` holds four functions that take and return
+`pandas.DataFrame` and do not reference `DataSet`:
 
 ```python
 from rollups import bucket_dataframe, join_dataframes
 ```
 
-They fix several things the `DataSet` versions get wrong - null keys
-that match, a stable row order, and a column both sides carry staying
-one column. See
-[DataFrame-native join and group-by](docs/dataframe-native.md).
+They answer differently from the `DataSet` versions on the same inputs:
+a malformed key raises where `DataSet` matches nothing silently, `inner`
+keeps left row order, and no result column is coerced to a
+reconstructed type.
+[DataFrame-native join and group-by](docs/dataframe-native.md) tabulates
+every difference.
 
 ## Extending
 
