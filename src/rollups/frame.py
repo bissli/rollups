@@ -458,3 +458,36 @@ def bucket_dataframe(
     if not keycols:
         return result.reset_index(drop=True)
     return result.rename_axis(keycols).reset_index()
+
+
+def empty_dataframe(columns: list[tuple[str, type]]) -> pd.DataFrame:
+    """Create a single-row pandas DataFrame of default values.
+
+    Parameters
+    ----------
+    columns : list of tuple
+        (name, type) pairs defining the columns.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row, carrying the same defaults `from_empty` produces:
+        '' for str, 0 for int, 0.0 for float, None otherwise. A bool
+        column therefore starts at None, not False.
+
+    Notes
+    -----
+    - Temporary migration helper; see docs/dataframe-native.md.
+    """
+    # Build a single-row DataFrame without relying on DataSet helpers
+    def _default(typ: type) -> Any:
+        if typ is str:
+            return ''
+        if typ is int:
+            return 0
+        if typ is float:
+            return 0.0
+        return None
+
+    data = {name: [_default(typ)] for name, typ in columns}
+    return pd.DataFrame(data)
