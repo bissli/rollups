@@ -17,7 +17,7 @@ from opendate import Date, DateTime, Time
 import libb
 from libb import lazydict as attrdict
 
-from . import io
+from . import aggregate, io, join
 # Re-exported so a caller importing from this module keeps working, and
 # so the package root can name them. noqa: the formatter strips an
 # import it sees as unused, and these have no local caller.
@@ -1369,3 +1369,98 @@ class DataSet:
         """
         return io.to_json(self, columns=columns, raw=raw,
                           format_value=format_value, **kw)
+
+    #
+    # DB-like methods
+    #
+
+    @classmethod
+    def join(cls, adataset: Self, akey: tuple[str], bdataset: Self,
+             bkey: tuple[str], jointype: str = 'inner',
+             amod: str = '', bmod: str = '',
+             acol: list[str] | None = None, bcol: list[str] | None = None,
+             first: bool = False, bfirst: bool = False) -> Self:
+        """Join two datasets on their key columns.
+
+        See Also
+        --------
+        rollups.join.join_datasets : the contract, the join-type table,
+            and the worked examples
+
+        Notes
+        -----
+        - The result takes the class this method was reached through, so
+          `Sub.join(a, ...)` answers a `Sub` and `DataSet.join(a, ...)`
+          answers a `DataSet` for the same inputs.
+        """
+        return join.join_datasets(adataset, akey, bdataset, bkey,
+                                  jointype=jointype, amod=amod, bmod=bmod,
+                                  acol=acol, bcol=bcol, first=first,
+                                  bfirst=bfirst, cls=cls)
+
+    def bucket(self, keycols: str,
+               aggregations: list[tuple[str, Callable, Callable] | str],
+               inplace: bool = False) -> Self:
+        """Group rows by key columns and apply aggregation functions.
+
+        Parameters
+        ----------
+        inplace : bool, default False
+            If True, replace this dataset's rows and columns with the
+            result and answer self.
+
+        See Also
+        --------
+        rollups.aggregate.bucket_dataset : the contract, the aggregation
+            format table, and the typing rules
+        """
+        result = aggregate.bucket_dataset(self, keycols, aggregations)
+        if inplace:
+            self.container = result.container
+            self.columns = result.columns
+            return self
+        return result
+
+    def flatten(self, kept, flattened, key='key', val='val') -> Self:
+        """Reverse-pivot, moving each flattened column into its own row.
+
+        See Also
+        --------
+        rollups.aggregate.flatten_dataset : the contract and the row
+            count it produces
+        """
+        return aggregate.flatten_dataset(self, kept, flattened,
+                                         key=key, val=val)
+
+    def pivot(self, index_col, data_cols, pivot_col, aggr=sum,
+              alias=lambda x, _: x, inplace: bool = False) -> Self:
+        """Pivot dataset to turn row values into columns.
+
+        Parameters
+        ----------
+        inplace : bool, default False
+            If True, replace this dataset's rows and columns with the
+            result and answer self.
+
+        See Also
+        --------
+        rollups.aggregate.pivot_dataset : the contract, the alias rule,
+            and the worked example
+        """
+        grouped = aggregate.pivot_dataset(self, index_col, data_cols,
+                                          pivot_col, aggr=aggr, alias=alias)
+        if inplace:
+            self.container = grouped.container
+            self.columns = grouped.columns
+            return self
+        return grouped
+
+    def transpose(self, new_index_name, pivot_index=0):
+        """Transpose so one column's values become the column names.
+
+        See Also
+        --------
+        rollups.aggregate.transpose_dataset : the contract and the
+            assumptions it makes about row order
+        """
+        return aggregate.transpose_dataset(self, new_index_name, pivot_index)
