@@ -8,12 +8,14 @@ Notes
 -----
 - See docs/joins.md for the join-type table and worked examples.
 """
-
-
 import logging
+from typing import TYPE_CHECKING
 
 from libb import OrderedSet
 from libb import lazydict as attrdict
+
+if TYPE_CHECKING:
+    from .core import DataSet
 
 logger = logging.getLogger(__name__)
 
@@ -275,3 +277,43 @@ def meld_datasets(meldee, melders, melder_ids, columns, inplace=True):
             result.add_column(new_col_name, col_type, values=values)
 
     return result
+
+
+def match_rows(arows, akeyfn, brows, bkeyfn):
+    """Match rows between two lists using a key function per side.
+
+    Parameters
+    ----------
+    arows : iterable
+        Rows from the first side.
+    akeyfn : Callable
+        Builds the match key for a row of `arows`.
+    brows : iterable
+        Rows from the second side.
+    bkeyfn : Callable
+        Builds the match key for a row of `brows`.
+
+    Returns
+    -------
+    tuple of list
+        (onlya, onlyb, inboth), where inboth holds (arow, brow) pairs.
+
+    Notes
+    -----
+    - Keys are walked in sorted order.
+    - Where a key repeats within a side, the last row wins.
+    """
+    amap = {akeyfn(r): r for r in arows}
+    bmap = {bkeyfn(r): r for r in brows}
+
+    onlya, onlyb, inboth = [], [], []
+    for key in sorted(amap.keys()):
+        a = amap.pop(key)
+        b = bmap.pop(key, None)
+        if not b:
+            onlya.append(a)
+            continue
+        inboth.append((a, b))
+    onlyb = list(bmap.values())
+
+    return onlya, onlyb, inboth
