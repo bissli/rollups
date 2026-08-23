@@ -426,6 +426,43 @@ class TestAppendValidation:
         assert isinstance(val, Time)
         assert (val.hour, val.minute, val.second) == (14, 30, 0)
 
+    def test_lazy_add_to_a_converted_dataset_converts_only_the_new_rows(self):
+        """The lazy path converts its own rows, leaving the flag set.
+
+        Re-arming a whole-container pass instead makes an
+        append-then-read loop quadratic.
+
+        Mutation: append or extend clearing _types_converted rather
+            than calling _convert_row, so the new row sits raw until a
+            read and every read re-converts every row.
+        Oracle: container read directly, which no read has passed over,
+            holding int 7 and 8 rather than '7' and '8'.
+        """
+        ds = DataSet([{'a': 1}], columns=[('a', int)])
+        ds.ensure_types()
+
+        ds.append({'a': '7'})
+        ds.extend([{'a': '8'}])
+
+        assert [row['a'] for row in ds.container] == [1, 7, 8]
+        assert ds._types_converted is True
+
+    def test_lazy_add_to_an_unconverted_dataset_defers_as_before(self):
+        """A dataset not yet converted stays armed, converting on read.
+
+        Mutation: append converting eagerly whatever the flag says,
+            which would drop the deferral `validate=False` promises.
+        Oracle: the raw string in the container before any read, and
+            the int after one.
+        """
+        ds = DataSet([{'a': '1'}], columns=[('a', int)])
+
+        ds.append({'a': '7'})
+
+        assert ds.container[-1]['a'] == '7'
+        assert ds._types_converted is False
+        assert ds[-1]['a'] == 7
+
     def test_append_validate_false_stores_the_caller_row(self):
         """The lazy path stores the caller's dict; validation copies it.
 

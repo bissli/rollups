@@ -200,7 +200,14 @@ class DataSet:
             self.container.append(converted)
         else:
             self.container.append(obj)
-            self._types_converted = False
+            # Convert the one new row rather than re-arming a pass over
+            # the whole container: re-arming makes an append-then-read
+            # loop quadratic. Where the pass is already armed there is
+            # nothing to do, since it will reach this row too.
+            if self._types_converted and self._check_types:
+                self._convert_row(obj, self._converted_columns())
+            else:
+                self._types_converted = False
 
     @ensure_types_converted
     def __getitem__(self, key: int) -> attrdict:
@@ -244,7 +251,14 @@ class DataSet:
                 self.container.append(converted)
         else:
             self.container.extend(sequence)
-            self._types_converted = False
+            # See the note in append(): converting the new rows beats
+            # re-arming a pass over every row already converted.
+            if self._types_converted and self._check_types:
+                cols_to_convert = self._converted_columns()
+                for obj in sequence:
+                    self._convert_row(obj, cols_to_convert)
+            else:
+                self._types_converted = False
 
     def sort(self, key=None, reverse=False) -> Self:
         """Sort rows the way list.sort does.
@@ -1203,31 +1217,63 @@ class DataSet:
         - A row missing a column gains it, holding None.
         - A column with no declared type is left as it is.
         """
-        cols_to_convert = [(name, typ) for name, typ in self.colmap.items()
-                           if typ not in {None, None.__class__}]
+        cols_to_convert = self._converted_columns()
 
         for row in self.container:
-            for name, typ in self.columns:
-                if name not in row:
-                    row[name] = None
-            for name, typ in cols_to_convert:
-                val = row[name]
-                if val is None:
-                    continue
-                if typ in {Date, datetime.date} and isinstance(val, datetime.date) and not isinstance(val, Date):
-                    row[name] = Date.instance(val)
-                    continue
-                if typ in {DateTime, datetime.datetime} and isinstance(val, datetime.datetime) and not isinstance(val, DateTime):
-                    row[name] = DateTime.instance(val)
-                    continue
-                if typ in {Time, datetime.time} and isinstance(val, datetime.datetime | datetime.time) and not isinstance(val, Time):
-                    row[name] = Time.instance(val)
-                    continue
-                if isinstance(val, typ):
-                    continue
-                row[name] = _convert_value(val, typ)
+            self._convert_row(row, cols_to_convert)
 
         self._types_converted = True
+
+    def _convert_row(self, row: attrdict,
+                     cols_to_convert: list[tuple[str, type]]) -> None:
+        """Convert one row in place to the declared column types.
+
+        Parameters
+        ----------
+        row : attrdict
+            Row to convert. Mutated in place.
+        cols_to_convert : list of tuple
+            (name, type) pairs to act on, from `_converted_columns()`.
+            Passed in rather than recomputed so a full-container pass
+            builds the list once instead of once per row.
+
+        Notes
+        -----
+        - A column the row is missing is added, holding None.
+        - A None value is left alone; a value already of the declared
+          type is left alone.
+        """
+        for name, typ in self.columns:
+            if name not in row:
+                row[name] = None
+        for name, typ in cols_to_convert:
+            val = row[name]
+            if val is None:
+                continue
+            if typ in {Date, datetime.date} and isinstance(val, datetime.date) and not isinstance(val, Date):
+                row[name] = Date.instance(val)
+                continue
+            if typ in {DateTime, datetime.datetime} and isinstance(val, datetime.datetime) and not isinstance(val, DateTime):
+                row[name] = DateTime.instance(val)
+                continue
+            if typ in {Time, datetime.time} and isinstance(val, datetime.datetime | datetime.time) and not isinstance(val, Time):
+                row[name] = Time.instance(val)
+                continue
+            if isinstance(val, typ):
+                continue
+            row[name] = _convert_value(val, typ)
+
+    def _converted_columns(self) -> list[tuple[str, type]]:
+        """The (name, type) pairs conversion acts on.
+
+        Returns
+        -------
+        list of tuple
+            Every declared column except those typed None, which are
+            left as they are.
+        """
+        return [(name, typ) for name, typ in self.colmap.items()
+                if typ not in {None, None.__class__}]
 
     def to_array(self, columns=None, numpy_type=None):
         """Convert selected columns to a numpy array.
