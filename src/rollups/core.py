@@ -14,6 +14,7 @@ from typing import Any, Self
 import numpy as np
 import pandas as pd
 from opendate import Date, DateTime, Time
+from prettytable import PrettyTable
 
 import libb
 from libb import lazydict as attrdict
@@ -44,6 +45,44 @@ def ensure_types_converted(method):
         self._ensure_types_converted()
         return method(self, *args, **kwargs)
     return wrapper
+
+
+def guess_dataframe_dataset_columns(df):
+    """Guess DataSet column types from a pandas DataFrame's dtypes.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Frame to inspect.
+
+    Returns
+    -------
+    list of tuple
+        (column_name, column_type) pairs, typed object where the dtype
+        is mixed and unmapped.
+    """
+    guess_type = df.apply(lambda x: pd.api.types.infer_dtype(x, skipna=True), axis=0)
+    guess_type = pd.DataFrame(guess_type).reset_index()
+    guess_type_map = dict(guess_type.values)
+    dataset_type_map = {
+        'integer': int,
+        'decimal': float,
+        'string': str,
+        'floating': float,
+        'date': Date,
+        'datetime': DateTime,
+        'datetime64': DateTime,
+        'time': Time,
+        'bytes': bytes,
+        'boolean': bool,
+        'mixed': object,
+    }
+    columns = []
+    use_cols = list(df)
+    for col in use_cols:
+        typ = dataset_type_map.get(guess_type_map.get(col, 'mixed'), object)
+        columns.append((col, typ))
+    return columns
 
 
 class DataSet:
@@ -1540,3 +1579,141 @@ class DataSet:
             assumptions it makes about row order
         """
         return aggregate.transpose_dataset(self, new_index_name, pivot_index)
+
+    #
+    # helpers
+    #
+
+    @staticmethod
+    def guess_columns(rows, cols=None, typs=None, exemplar: int = 0,
+                      scan_limit: int = 100, infer_numeric_strings: bool = False):
+        """Guess column types by scanning multiple rows for non-None values.
+
+        Parameters
+        ----------
+        rows : list of dict
+            Row dictionaries to scan.
+        cols : list of str or None, default None
+            Column names. None reads them off the exemplar row.
+        typs : list of type or None, default None
+            Column types. None infers them from the scanned rows.
+        exemplar : int, default 0
+            Row index supplying the column names and starting the scan.
+        scan_limit : int, default 100
+            Most rows to scan for type inference.
+        infer_numeric_strings : bool, default False
+            If True, a numeric string yields int or float rather than str.
+
+        Returns
+        -------
+        list of tuple
+            (column_name, column_type) pairs.
+
+        Notes
+        -----
+        - A column holding both int and float resolves to float; any
+          other first non-None value settles the type outright.
+        """
+        if not cols:
+            cols = list(rows[exemplar].keys()) if rows else []
+        if not typs:
+            if rows:
+                typs = []
+                scan_start = exemplar
+                scan_end = min(len(rows), scan_start + scan_limit)
+                scan_rows = rows[scan_start:scan_end]
+                for col in cols:
+                    typ = type(None)
+                    for row in scan_rows:
+                        val = row.get(col)
+                        if val is not None:
+                            row_typ = smart_type(
+                                val, infer_numeric_strings=infer_numeric_strings)
+                            if typ is type(None):
+                                typ = row_typ
+                            if typ is int and row_typ is float:
+                                typ = float
+                                break
+                            if typ is not int:
+                                break
+                    typs.append(typ)
+            else:
+                typs = []
+        columns = list(zip(cols, typs))
+        return columns
+
+    @property
+    def pp(self) -> str:
+        """Render the dataset as a text table, summary row included.
+        """
+        cols = self.cols
+        t = PrettyTable(cols)
+        numrows = len(self.container)
+        summary_row = self.summary if getattr(self, '_summary_args', None) else None
+        for i, row in enumerate(self.container):
+            divider = summary_row is not None and i == numrows - 1
+            t.add_row([row[c] for c in cols], divider=divider)
+        if summary_row is not None:
+            t.add_row([summary_row[c] for c in cols])
+        t.float_format = '.2'
+        return str('\n' + t.get_string())
+
+    def dump(self, label='DataSet'):
+        """Log the dataset's attributes at debug level.
+        """
+        logger.debug(label)
+        logger.debug(self.__dict__)
+
+    def _match(self, row, pattern, replace=None):
+        match = False
+        for key in list(row.keys()):
+            fld = row[key]
+            if not isinstance(fld, str):
+                continue
+            i = fld.lower().find(pattern.lower())
+            if i != -1:
+                match = True
+                if replace:
+                    j = i + len(pattern)
+                    # HACK save original value so formatter can access it
+                    # if needed
+                    row[key + '~orig'] = row[key]
+                    row[key] = fld[:i] + replace(fld[i:j]) + fld[j:]
+        return match
+
+
+#
+# utility functions on collections
+#
+
+
+def find(lst, key, value, raise_err=False):
+    """Find the index of the first dict in `lst` whose `key` holds `value`.
+
+    Parameters
+    ----------
+    lst : list of dict
+        Rows to search.
+    key : str
+        Key to read from each row.
+    value : Any
+        Value to match.
+    raise_err : bool, default False
+        If True, raise instead of returning -1 when nothing matches.
+
+    Returns
+    -------
+    int
+        Index of the first match, or -1 where nothing matched.
+
+    Raises
+    ------
+    ValueError
+        If nothing matched and `raise_err` is True.
+    """
+    for i, dic in enumerate(lst):
+        if dic[key] == value:
+            return i
+    if raise_err:
+        raise ValueError(f'({key}, {value}) not found')
+    return -1
