@@ -15,6 +15,7 @@ Notes
 import csv
 import datetime
 import itertools
+import json
 import logging
 import os
 import pathlib
@@ -267,3 +268,40 @@ def write_csv_file(dataset: 'DataSet', path_or_buf, **kwargs) -> None:
             _emit(dataset, file_handle, **kwargs)
     else:
         _emit(dataset, path_or_buf, **kwargs)
+
+
+def to_json(dataset: 'DataSet', columns=None, raw=False,
+            format_value=lambda x, y, _: x.get(y), **kw) -> str:
+    """Serialize the DataSet to a json string.
+
+    Parameters
+    ----------
+    dataset : DataSet
+        Rows to serialize.
+    columns : list of str or None, default None
+        Columns to keep. None or empty keeps them all.
+    raw : bool, default False
+        If True, emit a bare array of row objects. If False, emit an
+        object carrying `order`, `types` and `data`.
+    format_value : Callable, default lambda x, y, _: x.get(y)
+        Renders one value, taking (row, column, type).
+    **kw
+        Extra keys folded into the object. Ignored where `raw`.
+
+    Returns
+    -------
+    str
+        The json text. Dates are written in ISO form.
+    """
+    dataset.ensure_types()
+    if columns is None:
+        columns = []
+    cols = [(c, t) for c, t in dataset.columns if c in columns] if columns else dataset.columns
+    order, types = list(zip(*cols))
+    types = [_.__name__ for _ in types]
+    data = [{c: format_value(row, c, t) for c, t in cols} for row in dataset.container]
+    if raw:
+        return json.dumps(data, cls=libb.JSONEncoderISODate)
+    else:
+        data_d = dict(order=order, types=types, data=data, **kw)
+        return json.dumps(data_d, cls=libb.JSONEncoderISODate)
