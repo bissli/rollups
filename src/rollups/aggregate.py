@@ -72,8 +72,8 @@ def bucket_dataset(dataset: 'DataSet', keycols: str | list[str],
 
     def non_none(iterdict, col):
         """For passing-in unwound rows."""
-        result = [_.get(col) for _ in iterdict if _.get(col) is not None]
-        return result or [None]
+        values = (row.get(col) for row in iterdict)
+        return [val for val in values if val is not None] or [None]
 
     def infer_type_from_rows(rows: list, col: str) -> type:
         """Infer column type from first non-None value in rows."""
@@ -151,17 +151,25 @@ def bucket_dataset(dataset: 'DataSet', keycols: str | list[str],
         else:
             raise ValueError(f'Aggregation tuple must be length 1-4, got {len(agg)}: {agg}')
 
-    aggcols = list(map(parse_aggregation, aggregations))
+    # Wrap each operation once. Wrapping inside the group loop instead
+    # runs functools.wraps per group, which on a high-cardinality key
+    # costs more than the aggregation it guards.
+    aggcols = [(col, safe(op), filt, alias)
+               for col, op, filt, alias in map(parse_aggregation, aggregations)]
 
     # Prepare data and keys
     keycols = list(keycols) if isinstance(keycols, list | tuple) else [keycols]
     data = dataset.container[:]
 
     # Sort for grouping with a functional key
-    sort_key = lambda row: tuple((row[col] is None, row[col])
-                                 if isinstance(row[col], Hashable)
-                                 else (False, None)
-                                 for col in keycols)
+    def sort_key(row):
+        key = []
+        for col in keycols:
+            val = row[col]
+            key.append((val is None, val) if isinstance(val, Hashable)
+                       else (False, None))
+        return tuple(key)
+
     data.sort(key=sort_key)
 
     # Group function
@@ -173,7 +181,7 @@ def bucket_dataset(dataset: 'DataSet', keycols: str | list[str],
         rows = list(grouped)
         bucket = lazydict(zip(keycols, key))
         for col, op, filt, alias in aggcols:
-            bucket[alias] = safe(op)(filt(rows))
+            bucket[alias] = op(filt(rows))
         buckets.append(bucket)
 
     result = dataset.__class__(buckets)
