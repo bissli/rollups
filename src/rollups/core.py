@@ -586,3 +586,27 @@ class DataSet:
         assert coltyp in {int, float}, 'only supports int and float types'
         colval = list(self.unwind(colname))
         self.add_column(new_colname, float, values=libb.pct_change(colval))
+
+    def backfill(self, colname: str, new_colname: str | None = None) -> None:
+        """Fill None values using the nearest non-None value.
+
+        Parameters
+        ----------
+        colname : str
+            Column to read values from.
+        new_colname : str or None, default None
+            Column to write to. None writes back over `colname`.
+
+        Notes
+        -----
+        - Each None takes the value that precedes it; a run of leading
+          Nones takes the first value that follows. An all-None column
+          comes back unchanged.
+        - The filled column keeps the source column's position and type,
+          so a caller indexing by column order stays aligned.
+        """
+        colix = self.cols.index(colname)
+        coltyp = self.columns[colix][1]
+        values = libb.backfill(list(self.unwind(colname)))
+        new_colname = new_colname or colname
+        self.add_column(new_colname, coltyp, index=colix, values=values)
