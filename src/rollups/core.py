@@ -1,3 +1,4 @@
+import copy
 import logging
 import operator
 from functools import wraps
@@ -301,3 +302,90 @@ class DataSet:
         `ensure_types`.
         """
         self.ensure_types()
+
+    def _copy_structure(self) -> Self:
+        """Copy helper for shared structure between copy/shallowcopy/deepcopy.
+        """
+        ds = self.__class__()
+        ds.columns = list(self.columns) if self.columns else self.columns
+        ds._summary_args = self._summary_args
+        ds._check_types = getattr(self, '_check_types', True)
+        ds.page = self.page
+        ds.per_page = self.per_page
+        ds.total = self.total
+        ds.pageable = self.pageable
+        return ds
+
+    def copy(self, empty: bool = False) -> Self:
+        """Create a new container holding the same row objects.
+
+        Parameters
+        ----------
+        empty : bool, default False
+            If True, return the structure with no rows.
+
+        Returns
+        -------
+        DataSet
+            New dataset sharing the original's row objects.
+
+        Notes
+        -----
+        - The container is new but the rows are not: editing a row
+          through either dataset is visible from the other.
+        - Column metadata and pagination settings carry over.
+        """
+        ds = self._copy_structure()
+        ds.container = [] if empty else list(self.container)
+        ds._types_converted = getattr(self, '_types_converted', False)
+        return ds
+
+    def shallowcopy(self, empty: bool = False) -> Self:
+        """Create a new container holding new rows over the same values.
+
+        Parameters
+        ----------
+        empty : bool, default False
+            If True, return the structure with no rows.
+
+        Returns
+        -------
+        DataSet
+            New dataset with its own row objects.
+
+        Notes
+        -----
+        - Each row is a new attrdict, so adding or removing a column on
+          one dataset leaves the other alone.
+        - The values inside the rows are still shared, so mutating a
+          list, dict or DataSet held in a row is visible from both.
+        - Useful for aggregating with metadata columns without paying
+          for a deep copy.
+        """
+        ds = self._copy_structure()
+        ds.container = [] if empty else [attrdict(row) for row in self.container]
+        ds._types_converted = getattr(self, '_types_converted', False)
+        return ds
+
+    def deepcopy(self) -> Self:
+        """Create a fully independent copy sharing nothing.
+
+        Returns
+        -------
+        DataSet
+            New dataset with its own container, rows and values.
+
+        Notes
+        -----
+        - Nested structures are copied too, so neither dataset can
+          reach the other's data.
+        - Type conversion runs on this dataset first where it has not
+          already, so the copy holds converted values.
+        """
+        if not self._types_converted:
+            self.convert_container_types()
+            self._types_converted = True
+        ds = self._copy_structure()
+        ds.container = [attrdict(copy.deepcopy(dict(row))) for row in self.container]
+        ds._types_converted = True
+        return ds
