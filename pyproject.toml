@@ -1,6 +1,6 @@
 [project]
 name = "rollups"
-version = "0.7.4"
+version = "0.7.5"
 description = "An iterable of dictionaries, with typed columns"
 authors = [{ name = "bissli", email = "bissli@xyz.org" }]
 readme = "README.md"
