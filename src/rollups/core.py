@@ -3,6 +3,7 @@ import logging
 import math
 import operator
 import random
+from collections.abc import Callable
 from functools import wraps
 from typing import Self
 
@@ -692,3 +693,62 @@ class DataSet:
         """
         libb.multikeysort(self.container, columns, inplace=True)
         return self
+
+    def filter_data(self, pattern_or_predicate: str | Callable | None,
+                    replace=None, logkey=None, inplace=True) -> Self | None:
+        """Filter rows, in place unless told otherwise.
+
+        Parameters
+        ----------
+        pattern_or_predicate : str or Callable or None
+            A callable keeps the rows it returns true for; a string is
+            matched against every str field, case-insensitive. None
+            filters nothing.
+        replace : Callable or None, default None
+            Rewrites the matched text. String patterns only.
+        logkey : str or None, default None
+            Column named in a debug line for each row dropped.
+        inplace : bool, default True
+            If True, modify this dataset and return None; if False,
+            return a filtered copy.
+
+        Returns
+        -------
+        DataSet or None
+            None where `inplace` is True, else the filtered copy.
+
+        Notes
+        -----
+        - With `inplace` False and types already converted, the copy is
+          a deep one; prefer `inplace` True where that cost matters.
+        - `replace` saves each original value under `{col}~orig` so a
+          formatter can still reach it.
+        """
+        if callable(pattern_or_predicate):
+            predicate = pattern_or_predicate
+        elif pattern_or_predicate:
+            predicate = lambda row: self._match(row, pattern_or_predicate, replace)
+        else:
+            return None if inplace else self.deepcopy()
+
+        if logkey:
+            filtered_rows = []
+            for row in self.container:
+                if predicate(row):
+                    filtered_rows.append(row)
+                else:
+                    logger.debug(f'Filtered {logkey} {row.get(logkey)} from dataset')
+        else:
+            filtered_rows = [row for row in self.container if predicate(row)]
+
+        if inplace:
+            self.container = filtered_rows
+            return
+        else:
+            result = self.copy(empty=True)
+            if self._types_converted:
+                result.container = [attrdict(copy.deepcopy(dict(row))) for row in filtered_rows]
+                result._types_converted = True
+            else:
+                result.container = [attrdict(row) for row in filtered_rows]
+            return result
