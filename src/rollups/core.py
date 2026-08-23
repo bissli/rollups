@@ -773,3 +773,106 @@ class DataSet:
         for row in self:
             partitions[partition_func(row)].append(row)
         return partitions
+
+    #
+    # summary functions
+    #
+
+    def _summary_columns(self, label_idx: int) -> list[str]:
+        """Numeric columns to total, excluding the label column.
+        """
+        label_col = self.columns[label_idx][0] if 0 <= label_idx < len(self.columns) else None
+        return [col for col, typ in self.columns if libb.isnumeric(typ) and col != label_col]
+
+    def add_summary_row(
+        self,
+        label_idx=0,
+        label='Total',
+        columns: list[str] | None = None,
+        cols_funcs: list[tuple[str, Callable]] | None = None,
+    ) -> None:
+        """Declare a summary row, to be computed on first read.
+
+        Parameters
+        ----------
+        label_idx : int, default 0
+            Column index the label is written into.
+        label : str, default 'Total'
+            Text placed in the label column.
+        columns : list of str or None, default None
+            Columns to total. None takes every numeric column but the
+            label column.
+        cols_funcs : list of tuple or None, default None
+            (column, function) pairs, used in place of `columns` to
+            aggregate with something other than sum.
+
+        Notes
+        -----
+        - Nothing is computed here, so filtering or editing the rows
+          after this call still gives the right total.
+        """
+        if columns is None:
+            columns = self._summary_columns(label_idx)
+        self._summary_args = (label_idx, label, columns, cols_funcs)
+
+    def calc_summary_row(
+        self,
+        label_idx=0,
+        label='Total',
+        columns: list[str] | None = None,
+        cols_funcs: list[tuple[str, Callable]] | None = None,
+    ) -> attrdict:
+        """Compute the summary row now.
+
+        Parameters
+        ----------
+        label_idx : int, default 0
+            Column index the label is written into.
+        label : str, default 'Total'
+            Text placed in the label column.
+        columns : list of str or None, default None
+            Columns to total.
+        cols_funcs : list of tuple or None, default None
+            (column, function) pairs, used in place of `columns` to
+            aggregate with something other than sum.
+
+        Returns
+        -------
+        attrdict
+            The summary row, carrying `__is_summary__` True and None in
+            every column not aggregated.
+        """
+        if cols_funcs is None and columns is None:
+            columns = self._summary_columns(label_idx)
+        total = self.bucket([], cols_funcs) if cols_funcs else self.bucket([], columns)
+        if total:
+            summary = total[0].copy()
+            summary['__is_summary__'] = True
+            label_col = self.columns[label_idx][0] if 0 <= label_idx < len(self.columns) else None
+            if label_col:
+                summary[label_col] = label
+            summary.update((c, None) for c in self.cols if c not in summary)  # fill empty vals
+        else:
+            summary = attrdict((c, None) for c in self.cols)
+        return summary
+
+    @property
+    def summary(self) -> attrdict:
+        """The summary row, recomputed on every read.
+
+        Notes
+        -----
+        - A caller never has to declare one first; reading this totals
+          every numeric column where nothing was declared.
+        - Nothing is cached, so editing or filtering the rows and
+          reading again totals the current rows.
+        """
+        if not getattr(self, '_summary_args', None):
+            self.add_summary_row()
+        return self.calc_summary_row(*self._summary_args)
+
+    @classmethod
+    def is_summary_row(cls, row):
+        """Check whether a row is a summary row rather than data.
+        """
+        return row.get('__is_summary__', False)
