@@ -12,6 +12,7 @@ Notes
 
 
 import logging
+import numbers
 import operator
 import re
 
@@ -110,3 +111,45 @@ def get_or_val(cmp_val, row):
     if str(cmp_val).startswith('_'):
         return row.get(cmp_val.lstrip('_'))
     return cmp_val
+
+
+def matches(op, val, cmp_val):
+    """Compare `val` against `cmp_val`, by operator or by regex.
+
+    Parameters
+    ----------
+    op : Callable or None
+        Comparison to apply. None searches `cmp_val` as a regex over
+        `val`, case-insensitive.
+    val : Any
+        Value from the row.
+    cmp_val : Any
+        Value from the screen.
+
+    Returns
+    -------
+    bool
+        True where the comparison or the search holds.
+
+    Notes
+    -----
+    - A bool is rendered as 'Yes' or 'No' before comparing, so a screen
+      written for a display value matches the stored one.
+    - Where one side is numeric and the other is not, the non-numeric
+      side is parsed; a side that will not parse yields False.
+    """
+    if op is None:
+        return re.search(str(cmp_val), str(val), flags=re.IGNORECASE) is not None
+    if isinstance(val, bool):
+        val = 'Yes' if val else 'No'
+    if isinstance(cmp_val, bool):
+        cmp_val = 'Yes' if cmp_val else 'No'
+    if isinstance(val, numbers.Number) and not isinstance(cmp_val or 1, numbers.Number):
+        cmp_val = libb.parse(cmp_val)
+        if not isinstance(cmp_val, numbers.Number):
+            return False
+    if isinstance(cmp_val, numbers.Number) and not isinstance(val or 1, numbers.Number):
+        val = libb.parse(val)
+        if not isinstance(val, numbers.Number):
+            return False
+    return libb.safe_cmp(op, val, cmp_val)
