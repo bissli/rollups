@@ -9,8 +9,6 @@ Notes
 - See docs/screening.md for the operators, the value rules, and the
   column-reference syntax.
 """
-
-
 import logging
 import numbers
 import operator
@@ -153,3 +151,35 @@ def matches(op, val, cmp_val):
         if not isinstance(val, numbers.Number):
             return False
     return libb.safe_cmp(op, val, cmp_val)
+
+
+def apply_screen(dataset, filters):
+    """Filter a dataset in place by a screen query per column.
+
+    Parameters
+    ----------
+    dataset : DataSet
+        Dataset to filter. Modified in place.
+    filters : dict
+        Column name to screen query. Every clause has to hold for a row
+        to survive.
+
+    Notes
+    -----
+    - An empty query, or one naming a column the dataset does not carry,
+      is skipped, so a partly filled form does not empty the result.
+    - See docs/screening.md for the query syntax.
+    """
+    for col, screen in filters.items():
+        if not screen:
+            logger.debug(f'Skipping empty screen {col}={screen}')
+            continue
+        if col not in dataset.cols:
+            logger.warning(f'Skipping unmatched column {col}={screen}')
+            continue
+        screen_fn = lambda row: all(
+            matches(cmp, row.get(col), op(get_or_val(cmp_val, row), op_val))
+            for cmp, cmp_val, op, op_val in interpret_screen(screen)
+        )
+        dataset.filter_data(screen_fn)
+        logger.info(f'Filtered dataset to {len(dataset)} rows')
