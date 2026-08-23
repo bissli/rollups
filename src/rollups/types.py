@@ -193,8 +193,16 @@ def _convert_value(val, typ):
     if typ in TIME_TYPES:
         if isinstance(val, TIME_VALUE_TYPES):
             return Time.instance(val)
-        elif isinstance(val, str):
+        if isinstance(val, str):
             return Time.parse(val)
+        # Normalize here rather than leaving the generic call below to
+        # answer a plain datetime.time. Conversion has to be a fixed
+        # point: a row converts on append and again on the next full
+        # pass, and a value that changes class between the two drifts.
+        try:
+            return Time.instance(typ(val))
+        except Exception:
+            return val
     try:
         if typ in NUMERIC_TYPES:
             result = libb.numify(val, typ)

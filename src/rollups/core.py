@@ -314,11 +314,18 @@ class DataSet:
         *args
             Values, in the order the rows should end up.
 
+        Raises
+        ------
+        AssertionError
+            If the count of values differs from the row count.
+        TypeError
+            If a value in `col` is unhashable.
+
         Notes
         -----
-        - Assumes the values are unique within the column, and that
-          each is hashable.
-        - Requires one value per row; a mismatch raises AssertionError.
+        - Assumes the values are unique within the column, and distinct
+          under `==` across `args`. Two that compare equal share one
+          rank, so `1` and `1.0` name the same position.
         - A row whose value was not named keeps its place ahead of the
           named ones, since the sort is stable and it ranks below them.
         """
@@ -545,8 +552,16 @@ class DataSet:
         - Only the sampled rows are copied. Deep copying the container
           first and sampling from the copy costs the full row count
           however few rows are asked for.
+        - Converts every row, not only the sampled ones, and does so
+          whatever `check_types` says. That is `deepcopy`'s guard, kept
+          here deliberately: `ensure_types()` would skip a
+          `check_types=False` dataset, and the deep copy of the sampled
+          rows would then convert those rows alone - in place, since
+          they are the rows this dataset holds - leaving one column
+          holding two types.
         """
-        self.ensure_types()
+        if not self._types_converted:
+            self.convert_container_types()
         chosen = self.copy(empty=True)
         chosen.container = random.sample(self.container,
                                          min(max(n, 0), len(self.container)))
@@ -978,7 +993,7 @@ class DataSet:
         """
         columns = columns or [_[0] for _ in self.columns]
         for row in self:
-            values = (row.get(col) for col in columns)
+            values = (dict.get(row, col) for col in columns)
             row[label] = row_func(val for val in values if val)
         self.add_column(label, float)
 
@@ -995,13 +1010,23 @@ class DataSet:
     @columns.setter
     def columns(self, columns: list[tuple[str, type]]) -> None:
         """Set column definitions, keeping the last of any repeated name.
+
+        Notes
+        -----
+        - Declaring a name no row carries re-arms conversion, whose
+          first act is to give every row the columns it is missing.
+          Without that, reading the new column raises KeyError on every
+          row, and only some later write happens to fill it in.
         """
         seen = {}
         for col, typ in columns:
             if col in seen:
                 del seen[col]
             seen[col] = typ
+        known = {col for col, _ in getattr(self, '_columns', ())}
         self._columns = list(seen.items())
+        if not seen.keys() <= known:
+            self._types_converted = False
 
     @property
     def colmap(self) -> dict[str, type]:
@@ -1089,7 +1114,7 @@ class DataSet:
                 row[name] = value_fn(row)
         else:
             for row in self.container:
-                row[name] = row.get(name)
+                row[name] = dict.get(row, name)
         if old_type is not None and old_type != typ:
             self._types_converted = False
 
@@ -1327,7 +1352,7 @@ class DataSet:
             else:
                 plain.append((name, typ))
         plan = (names, plain, temporal)
-        self._plan_cache = (list(self._columns), plan)
+        self._plan_cache = ([tuple(pair) for pair in self._columns], plan)
         return plan
 
     def to_array(self, columns=None, numpy_type=None):

@@ -7,6 +7,7 @@ Tests for enhanced type inference and validation across entry points:
 """
 import datetime
 import logging
+import random
 
 import pytest
 from opendate import Date, DateTime, Time
@@ -1545,6 +1546,64 @@ def test_sample_converts_this_dataset_before_choosing_rows():
 
     assert ds.container[0]['a'] == 7
     assert ds.container[1]['a'] == 8
+
+
+def test_sample_leaves_one_class_per_column_when_types_are_unchecked():
+    """Verify sampling a check_types=False dataset converts all or none.
+
+    Mutation: guarding the conversion with ensure_types(), which skips
+        a check_types=False dataset. The deep copy of the sampled rows
+        then converts those rows alone - in place, since the sample
+        shares them - so the column holds two classes at once.
+    Oracle: the set of value classes in the source column, which has to
+        hold one entry however few rows were sampled.
+    """
+    ds = DataSet([{'id': i, 'x': 'text', 'y': i} for i in range(1, 6)])
+    flat = ds.flatten(['id'], ['x', 'y'])
+    numeric = [row for row in flat.container if row['key'] == 'y']
+
+    random.seed(3)
+    flat.sample(2)
+
+    assert len({type(row['val']) for row in numeric}) == 1
+
+
+def test_converting_a_numeric_time_twice_changes_nothing():
+    """Verify conversion is a fixed point for a time column.
+
+    Mutation: letting the generic `typ(val)` call answer a time column,
+        which yields a plain datetime.time that only the NEXT pass
+        promotes - so a row converts differently depending on how many
+        passes have run over it.
+    Oracle: the value after one pass, compared against itself after a
+        second.
+    """
+    ds = DataSet([{'t': 9}], columns=[('t', datetime.time)])
+
+    ds.ensure_types()
+    after_one = ds.container[0]['t']
+    ds._types_converted = False
+    ds.ensure_types()
+
+    assert ds.container[0]['t'] == after_one
+    assert type(ds.container[0]['t']) is type(after_one) is Time
+
+
+def test_declaring_a_column_no_row_carries_rearms_conversion():
+    """Verify a newly declared column reads as None rather than raising.
+
+    Mutation: the columns setter replacing `_columns` without clearing
+        `_types_converted`, so the fill pass never runs and every read
+        of the new column raises KeyError.
+    Oracle: hand-computed - no row carries 'extra', so it reads None.
+    """
+    ds = DataSet([{'g': 'a', 'v': 1}, {'g': 'b', 'v': 2}])
+    assert [row['v'] for row in ds] == [1, 2]
+
+    ds.columns = ds.columns + [('extra', int)]
+
+    assert ds[0]['extra'] is None
+    assert ds.partition(lambda row: row['g'])['a'][0]['extra'] is None
 
 
 if __name__ == '__main__':

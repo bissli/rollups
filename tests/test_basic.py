@@ -1222,3 +1222,21 @@ def test_order_leaves_an_unnamed_row_in_front():
     x.order('foo', 'b', 'zz', 'yy')
 
     assert [row['foo'] for row in x] == ['a', 'x', 'b']
+
+
+def test_order_refuses_an_unhashable_column_value():
+    """Verify ordering by a column holding a list raises, not silently.
+
+    Mutation: dropping the documented hashable requirement and reaching
+        for a form that compares by equality instead, which would make
+        the contract depend on which values a caller happened to pass.
+    Oracle: the TypeError itself, and the container left untouched.
+    """
+    x = DataSet([
+        {'k': ['x'], 'id': 1},
+        {'k': 'b', 'id': 2}], columns=[('k', object), ('id', int)])
+
+    with pytest.raises(TypeError):
+        x.order('k', 'b', ['x'])
+
+    assert [row['id'] for row in x.container] == [1, 2]

@@ -1819,3 +1819,19 @@ def test_bucket_dataset_is_reachable_standalone_and_matches_the_method():
 
     assert {r.g: r.v for r in direct} == {'a': 3, 'b': 4}
     assert [dict(r) for r in direct] == [dict(r) for r in method]
+
+
+def test_bucket_counts_no_value_for_a_column_no_row_carries():
+    """Verify an aggregated column absent from every row holds nothing.
+
+    Mutation: reading each row through its own get(), which answers a
+        missing key with the dict attribute of that name, so every row
+        contributes a bound method and the group looks populated.
+    Oracle: hand-computed - two rows carry no column called 'values',
+        so len() over the group sees the one-item fallback, not two.
+    """
+    ds = DataSet([{'g': 'x', 'v': 1}, {'g': 'x', 'v': 2}])
+
+    out = ds.bucket('g', [('values', len)])
+
+    assert [dict(row) for row in out] == [{'g': 'x', 'values': 1}]

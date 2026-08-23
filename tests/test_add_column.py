@@ -808,3 +808,19 @@ def test_remove_column_missing_logs_the_missing_name(caplog):
 
 if __name__ == '__main__':
     pytest.main([__file__])
+
+
+def test_add_column_fills_a_column_named_after_a_dict_method():
+    """Verify a new column named 'items' fills with None, not a method.
+
+    Mutation: reading the existing value through the row's own get(),
+        which answers a missing key with the dict attribute of that
+        name, so the row gains a bound method as data.
+    Oracle: hand-computed - no row carries 'items', so every row holds
+        None under it.
+    """
+    ds = DataSet([{'a': 1}, {'a': 2}])
+
+    ds.add_column('items', str)
+
+    assert [row['items'] for row in ds] == [None, None]
