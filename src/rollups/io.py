@@ -305,3 +305,55 @@ def to_json(dataset: 'DataSet', columns=None, raw=False,
     else:
         data_d = dict(order=order, types=types, data=data, **kw)
         return json.dumps(data_d, cls=libb.JSONEncoderISODate)
+
+
+def log_excel_errors(func: Callable) -> Callable:
+    """Log the file, error type, and arguments when Excel parsing fails.
+
+    Parameters
+    ----------
+    func : Callable
+        Excel-parsing function to wrap.
+
+    Returns
+    -------
+    Callable
+        The wrapped function; it re-raises after logging.
+
+    Notes
+    -----
+    - Meant to sit under `@classmethod`, and names the workbook either
+      way.
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as exc:
+            # The wrapper runs under @classmethod, so it is handed the
+            # class before the file. Drop a leading class, or every
+            # failure logs the same class repr instead of the workbook.
+            file_args = args[1:] if args and isinstance(args[0], type) else args
+            source = file_args[0] if file_args else kwargs.get(
+                'file_or_name', 'unknown')
+            error_details = [
+                f'Excel parsing failed for file: {source}',
+                f'Error type: {type(exc).__name__}',
+                f'Error details: {exc}',
+                f'Args: {args}',
+                f'Kwargs: {kwargs}',
+                ]
+
+            if hasattr(exc, 'strerror'):
+                error_details.append(f'System error: {exc.strerror}')
+
+            if 'com_error' in str(type(exc)):
+                error_details.append(
+                    'This appears to be a COM/Excel automation error. '
+                    'Check if Excel is properly installed and accessible.')
+
+            logger.error('\n'.join(error_details))
+            raise
+
+    return wrapper
