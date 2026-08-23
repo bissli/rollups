@@ -14,6 +14,7 @@ Notes
 import datetime
 import logging
 import re
+from functools import lru_cache
 
 from opendate import Date, DateTime
 
@@ -132,3 +133,17 @@ def islistoftuples(x):
     """Check that `x` is a sequence of (name, type) pairs, as `columns` wants.
     """
     return libb.issequence(x) and all(libb.issequence(y) and len(y) == 2 for y in x)
+
+
+@lru_cache(maxsize=10000)
+def _cached_date_parse(date_str: str):
+    """Cache date string parsing - dates repeat often in datasets.
+    """
+    return Date.parse(date_str)
+
+
+@lru_cache(maxsize=10000)
+def _cached_datetime_parse(dt_str: str):
+    """Cache datetime string parsing.
+    """
+    return DateTime.parse(dt_str)
