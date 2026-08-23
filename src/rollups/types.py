@@ -9,8 +9,6 @@ Notes
   A dynamic date code is never cached, since it resolves against the
   current day.
 """
-
-
 import contextlib
 import datetime
 import logging
@@ -180,3 +178,33 @@ def _convert_value(val, typ):
             return result if result is not None else val
         return typ(val)
     return val
+
+
+def force_type(somestr, date_fmt='%d%b%y'):
+    """Force a string to float, else to DateTime, else leave it a string.
+
+    Parameters
+    ----------
+    somestr : str
+        Value to convert.
+    date_fmt : str, default '%d%b%y'
+        Format tried when the value is not a number.
+
+    Returns
+    -------
+    float or DateTime or str
+        The converted value, or the input unchanged.
+
+    Notes
+    -----
+    - A parenthesized number is read as negative, so '(1.5)' is -1.5.
+    """
+    try:
+        paren_re = r'^\(([0-9]*[.]?[0-9]*)\)$'
+        neg_val = re.sub(paren_re, lambda x: f'-{x.group(1)}', somestr)
+        return float(neg_val)
+    except ValueError:
+        try:
+            return DateTime.strptime(somestr, date_fmt)
+        except ValueError:
+            return somestr
