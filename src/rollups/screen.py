@@ -90,3 +90,23 @@ def interpret_screen(screen):
     cleaned = [clean_val(*m.groups()) for m in map(matchem, [s.strip() for s in screen.split(',')])]
     logger.debug(f'Parsed screen {screen} as {cleaned}')
     return cleaned
+
+
+def get_or_val(cmp_val, row):
+    """Resolve a screen value that may name another column.
+
+    Parameters
+    ----------
+    cmp_val : Any
+        Screen value. A leading underscore names a column of `row`.
+    row : dict
+        Row supplying the referenced value.
+
+    Returns
+    -------
+    Any
+        The referenced column's value, or `cmp_val` unchanged.
+    """
+    if str(cmp_val).startswith('_'):
+        return row.get(cmp_val.lstrip('_'))
+    return cmp_val
