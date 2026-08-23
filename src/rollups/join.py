@@ -228,3 +228,50 @@ def diff_datasets(ds1, ds2, keycols, comparecols):
             only_in_ds1.append(ds1_row)
     only_in_ds2 = list(ds2_map.values())
     return same, diff, only_in_ds1, only_in_ds2
+
+
+def meld_datasets(meldee, melders, melder_ids, columns, inplace=True):
+    """Combine columns from several aligned datasets by row position.
+
+    Parameters
+    ----------
+    meldee : DataSet
+        Base dataset to add columns to.
+    melders : list of DataSet
+        Datasets to take columns from.
+    melder_ids : list of str
+        Prefix per melder, used to name the merged columns.
+    columns : list of list of str
+        Columns to take from each melder, positionally matched.
+    inplace : bool, default True
+        If True, modify `meldee`; if False, work on a deep copy.
+
+    Returns
+    -------
+    DataSet
+        The melded dataset.
+
+    Raises
+    ------
+    ValueError
+        If a melder's row count differs from the meldee's.
+
+    Notes
+    -----
+    - Rows are matched by position, not by key, so every dataset has to
+      hold the same rows in the same order.
+    - A merged column is named `{prefix}_{col}`.
+    """
+    result = meldee if inplace else meldee.deepcopy()
+
+    for dataset, prefix, cols in zip(melders, melder_ids, columns):
+        if len(result) != len(dataset):
+            raise ValueError(f'Length mismatch: {len(dataset)} != {len(result)}')
+
+        for col in cols:
+            new_col_name = f'{prefix}_{col}'
+            col_type = dataset.colmap.get(col, type(None))
+            values = [source_row.get(col) for source_row in dataset]
+            result.add_column(new_col_name, col_type, values=values)
+
+    return result
