@@ -216,9 +216,8 @@ def read_csv_rows(file_or_name, **kw) -> tuple[list, list]:
 def _emit(dataset, file_handle, header=True, **kwargs):
     """Render the dataset into an open csv writer."""
     def _format(row, col, typ):
-        if row[col] is None:
-            return ''
-        return row[col]
+        val = row[col]
+        return '' if val is None else val
 
     def _fmt_label(col):
         return col
@@ -226,14 +225,15 @@ def _emit(dataset, file_handle, header=True, **kwargs):
     _format = kwargs.pop('format', _format)
     _format_label = kwargs.pop('format_label', _fmt_label)
 
-    cols = [_format_label(c) for c, t in dataset.columns]
+    columns = list(dataset.columns)
+    cols = [_format_label(c) for c, t in columns]
 
     writer = csv.writer(file_handle)
     if header:
         writer.writerow(cols)
     for row in dataset:
         try:
-            writer.writerow([_format(row, c, t) for c, t in dataset.columns])
+            writer.writerow([_format(row, c, t) for c, t in columns])
         except Exception as exc:
             logger.error(f'Problem with this row:\n{str(row)}')
             logger.exception(exc)
