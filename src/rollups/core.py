@@ -951,3 +951,104 @@ class DataSet:
         """Column types, in column order.
         """
         return [typ for _, typ in self._columns]
+
+    @ensure_types_converted
+    def add_column(self, name, typ, index=None,
+                   value: Callable | None = None, values=None) -> None:
+        """Add a column, or update one already present.
+
+        Parameters
+        ----------
+        name : str
+            Column name.
+        typ : type
+            Column type.
+        index : int or None, default None
+            Position to insert at. None appends. An existing column is
+            dropped from its old position either way, so it moves to the
+            end unless an index puts it back.
+        value : Callable or Any or None, default None
+            A callable is called per row to produce the value; anything
+            else is written to every row.
+        values : list or None, default None
+            One value per row, positionally matched. Takes precedence
+            over `value`.
+
+        Raises
+        ------
+        ValueError
+            If `values` is given and its length is not the row count.
+
+        Notes
+        -----
+        - With neither `value` nor `values`, an existing value survives
+          and a missing one becomes None.
+        - Changing an existing column's type re-arms type conversion, so
+          the new type is applied on the next read.
+        """
+        existing_index = next((i for i, (c, _) in enumerate(self._columns) if c == name), None)
+        old_type = self._columns[existing_index][1] if existing_index is not None else None
+        if existing_index is not None:
+            del self._columns[existing_index]
+        if index is not None:
+            self._columns.insert(index, (name, typ))
+        else:
+            self._columns.append((name, typ))
+        self.columns = self._columns
+        if values is not None:
+            if len(values) != len(self.container):
+                raise ValueError(
+                    f'values length {len(values)} must match dataset length {len(self.container)} for column {name}')
+            for row, val in zip(self.container, values):
+                row[name] = val
+        elif value is not None:
+            value_fn = value if callable(value) else lambda _: value
+            for row in self.container:
+                row[name] = value_fn(row)
+        else:
+            for row in self.container:
+                row[name] = row.get(name)
+        if old_type is not None and old_type != typ:
+            self._types_converted = False
+
+    def remove_column(self, name: str) -> None:
+        """Remove a column and drop it from every row.
+
+        Parameters
+        ----------
+        name : str
+            Column to remove. A name not present is a no-op, logged at
+            debug. Matching is case-sensitive.
+        """
+        if name in self.colmap:
+            columns = [(c, t) for c, t in self.columns if c != name]
+            self.columns = columns
+        else:
+            logger.debug(f'{name} not in DataSet columns')
+        for row in self.container:
+            if name in row:
+                del row[name]
+
+    def rename_column(self, name: str, rename: str) -> None:
+        """Rename a column in the dataset.
+
+        Parameters
+        ----------
+        name : str
+            Column to rename. A name not present is a no-op.
+        rename : str
+            New name. An existing column of this name is removed first.
+        """
+        if name == rename:
+            logger.warning(f'Column {name} matches rename column {rename}')
+            return
+        if rename in self.colmap and name in self.colmap:
+            self.remove_column(rename)
+        if name in self.colmap:
+            idx = self.cols.index(name)
+            columns = list(self.columns)
+            columns[idx] = (rename, columns[idx][1])
+            self.columns = columns
+        for row in self.container:
+            if name in row:
+                row[rename] = row.pop(name, None)
