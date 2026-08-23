@@ -899,3 +899,55 @@ class DataSet:
         for row in self:
             row[label] = row_func(row[_] for _ in columns if row.get(_))
         self.add_column(label, float)
+
+    #
+    # columns property
+    #
+
+    @property
+    def columns(self) -> list[tuple[str, type]]:
+        """Return mutable list of column definitions.
+        """
+        return self._columns
+
+    @columns.setter
+    def columns(self, columns: list[tuple[str, type]]) -> None:
+        """Set column definitions, keeping the last of any repeated name.
+        """
+        seen = {}
+        for col, typ in columns:
+            if col in seen:
+                del seen[col]
+            seen[col] = typ
+        self._columns = list(seen.items())
+
+    @property
+    def colmap(self) -> dict[str, type]:
+        """Column definitions as a name-to-type dict.
+        """
+        return dict(self._columns)
+
+    @property
+    def cols(self) -> list[str]:
+        """Column names, in column order.
+        """
+        return [col for col, _ in self._columns]
+
+    @cols.setter
+    def cols(self, cols: list[str]) -> None:
+        """Set column names, preserving types for existing columns.
+        """
+        current_types = dict(self._columns)
+        new_columns = []
+        for col in cols:
+            if col not in current_types:
+                logger.warning(f'Column {col} not in current schema, skipping')
+                continue
+            new_columns.append((col, current_types[col]))
+        self._columns = libb.unique(new_columns)
+
+    @property
+    def typs(self) -> list[type]:
+        """Column types, in column order.
+        """
+        return [typ for _, typ in self._columns]
