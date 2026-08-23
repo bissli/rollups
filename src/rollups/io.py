@@ -272,8 +272,35 @@ def write_csv_file(dataset: 'DataSet', path_or_buf, **kwargs) -> None:
         _emit(dataset, path_or_buf, **kwargs)
 
 
+def read_json_value(row, col, typ):
+    """Read one value for `to_json`, absent or None alike.
+
+    Parameters
+    ----------
+    row : dict
+        Row to read.
+    col : str
+        Column to read.
+    typ : type
+        Declared type of the column. Unused; the signature is the hook
+        `to_json` calls, and a caller's own hook is given the type.
+
+    Returns
+    -------
+    Any
+        The value, or None where the row does not carry the column.
+
+    Notes
+    -----
+    - Reads through the dict method rather than the row's own `get`,
+      which is written in Python and answers a missing key with the
+      attribute of that name.
+    """
+    return dict.get(row, col)
+
+
 def to_json(dataset: 'DataSet', columns=None, raw=False,
-            format_value=lambda x, y, _: x.get(y), **kw) -> str:
+            format_value=read_json_value, **kw) -> str:
     """Serialize the DataSet to a json string.
 
     Parameters
@@ -285,7 +312,7 @@ def to_json(dataset: 'DataSet', columns=None, raw=False,
     raw : bool, default False
         If True, emit a bare array of row objects. If False, emit an
         object carrying `order`, `types` and `data`.
-    format_value : Callable, default lambda x, y, _: x.get(y)
+    format_value : Callable, default read_json_value
         Renders one value, taking (row, column, type).
     **kw
         Extra keys folded into the object. Ignored where `raw`.

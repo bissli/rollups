@@ -1500,7 +1500,7 @@ class DataSet:
         io.write_excel_file(self, path_or_buf, **kwargs)
 
     def json(self, columns=None, raw=False,
-             format_value=lambda x, y, _: x.get(y), **kw):
+             format_value=io.read_json_value, **kw):
         """Serialize the DataSet to a json string.
 
         See Also
