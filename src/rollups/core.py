@@ -666,3 +666,29 @@ class DataSet:
                     yield '...'
                 yield this_p
                 last_p = this_p
+
+    #
+    # utility methods
+    #
+
+    def sort_data(self, *columns) -> Self:
+        """Sort rows by column name, as SQL `order by` does.
+
+        Parameters
+        ----------
+        *columns : str
+            Column names, most significant first. Prefix a name with
+            `-` to sort that column descending.
+
+        Returns
+        -------
+        DataSet
+            Self, sorted in place.
+
+        Notes
+        -----
+        - For a sort driven by a function rather than column names,
+          use `sort`.
+        """
+        libb.multikeysort(self.container, columns, inplace=True)
+        return self
