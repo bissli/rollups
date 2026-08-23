@@ -11,12 +11,13 @@ Notes
 """
 
 
+import contextlib
 import datetime
 import logging
 import re
 from functools import lru_cache
 
-from opendate import Date, DateTime
+from opendate import Date, DateTime, Time
 
 import libb
 
@@ -147,3 +148,35 @@ def _cached_datetime_parse(dt_str: str):
     """Cache datetime string parsing.
     """
     return DateTime.parse(dt_str)
+
+
+def _convert_value(val, typ):
+    """Convert a single value to the target type.
+    """
+    if val is None or typ is None or typ is None.__class__:
+        return val
+    if typ in {datetime.datetime, DateTime}:
+        if isinstance(val, datetime.date):
+            return DateTime.instance(val)
+        elif isinstance(val, str):
+            if is_dynamic_date_code(val):
+                return DateTime.parse(val)
+            return _cached_datetime_parse(val)
+    if typ in {datetime.date, Date}:
+        if isinstance(val, datetime.date):
+            return Date.instance(val)
+        elif isinstance(val, str):
+            if is_dynamic_date_code(val):
+                return Date.parse(val)
+            return _cached_date_parse(val)
+    if typ in {datetime.time, Time}:
+        if isinstance(val, datetime.datetime | datetime.time):
+            return Time.instance(val)
+        elif isinstance(val, str):
+            return Time.parse(val)
+    with contextlib.suppress(Exception):
+        if typ in {int, float}:
+            result = libb.numify(val, typ)
+            return result if result is not None else val
+        return typ(val)
+    return val
