@@ -19,7 +19,8 @@ Notes
 
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Iterable, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -297,3 +298,163 @@ def join_dataframes(
 
     ordered = lout + [c for c in rout if c not in set(lout)]
     return merged.loc[:, ordered].reset_index(drop=True)
+
+
+def bucket_dataframe(
+    df: pd.DataFrame,
+    keycols: str | Sequence[str] | None,
+    aggregations: Sequence[str | tuple],
+) -> pd.DataFrame:
+    """Group rows by key columns and aggregate, one row per group.
+
+    The SQL GROUP BY: one result row per distinct key combination.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Rows to group.
+    keycols : str or sequence of str or None
+        Column(s) to group by. Empty or None totals every row into one
+        row carrying no key column.
+    aggregations : sequence
+        What to aggregate and how. Each entry is a column name, or a
+        tuple of 1 to 4 items: (col), (col, op), (col, op, alias),
+        (col, op, filter), or (col, op, filter, alias). A three-item
+        tuple reads its third item by type - a string is an alias, a
+        callable is a filter. An empty sequence returns the distinct
+        keys.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per key combination: the key columns, then one column
+        per aggregation in the order given, under a fresh RangeIndex.
+
+    Raises
+    ------
+    ValueError
+        If an aggregation tuple is empty or longer than four items, if
+        a named key or aggregation column is absent from `df`, if `df`
+        repeats a column name, or if an aggregation would land on a key
+        column's name.
+
+    Notes
+    -----
+    - A bare column name sums it, skipping nulls.
+    - `op` is any callable taking the group's values. sum, max, and min
+      over a numeric column run vectorized; every other callable, and
+      any aggregation carrying a filter, runs once per group.
+    - The two paths agree on every ordinary value and part only at the
+      extremes: pandas compensates the vectorized sum and wraps it at
+      int64, where a per-group Python sum does neither. A per-group
+      result also arrives in the numpy dtype nearest its values, so a
+      nullable Int64 column comes back float64.
+    - A filter receives the group as a DataFrame, key columns included,
+      and returns the values to aggregate. Return an empty selection
+      freely: an empty group aggregates to null rather than raising.
+    - An op that raises TypeError or ValueError aggregates to null,
+      except over uniform sets, frozensets, lists, or tuples, which are
+      merged into one of their own kind.
+    - Groups come back in sorted key order with the null key last.
+    - Aggregating one column twice needs an alias on each. Without one
+      the second overwrites the first, keeping the first's position.
+    """
+
+    def parse_aggregation(agg: Any) -> tuple[str, Callable, Callable | None, str]:
+        """Read one aggregation entry as (col, op, filter, alias).
+        """
+        if not isinstance(agg, tuple | list):
+            return agg, sum, None, agg
+        if not 1 <= len(agg) <= 4:
+            raise ValueError(f'Aggregation tuple must be length 1, 2, 3, or 4: {agg}')
+        if len(agg) == 1:
+            return agg[0], sum, None, agg[0]
+        if len(agg) == 2:
+            col, op = agg
+            return col, op, None, col
+        if len(agg) == 3:
+            col, op, third = agg
+            if callable(third):
+                return col, op, third, col
+            return col, op, None, third
+        return tuple(agg)
+
+    def aggregate(group: pd.DataFrame, col: str, op: Callable,
+                  filt: Callable | None) -> Any:
+        """Aggregate one group's values, answering None where empty.
+        """
+        values = group[col].dropna() if filt is None else filt(group)
+        # A filter that hands back a bare scalar has no length to read,
+        # and one value is not an empty selection.
+        if values is None or (hasattr(values, '__len__') and not len(values)):
+            return None
+        try:
+            return op(values)
+        except (TypeError, ValueError):
+            # A collection column reaches here because the op has no
+            # meaning on collections. Merge them instead of losing them,
+            # as DataSet.bucket does.
+            items = list(values) if isinstance(values, Iterable) else []
+            kind = type(items[0]) if items else None
+            if kind in {set, frozenset} and all(isinstance(x, kind) for x in items):
+                return kind().union(*items)
+            if kind in {list, tuple} and all(isinstance(x, kind) for x in items):
+                return kind(x for item in items for x in item)
+            return None
+
+    keycols = [keycols] if isinstance(keycols, str) else list(keycols or [])
+    parsed = [parse_aggregation(agg) for agg in aggregations]
+
+    labels = list(df.columns)
+    repeated = sorted({c for c in labels if labels.count(c) > 1}, key=str)
+    if repeated:
+        raise ValueError(
+            f'Frame carries {", ".join(map(repr, repeated))} more than once; '
+            'column names must be unique')
+
+    missing = [c for c in keycols + [col for col, *_ in parsed] if c not in labels]
+    if missing:
+        raise ValueError(f'Frame has no column {", ".join(map(repr, missing))}')
+
+    shadowed = [alias for *_, alias in parsed if alias in set(keycols)]
+    if shadowed:
+        raise ValueError(
+            f'Aggregation {", ".join(map(repr, shadowed))} would overwrite '
+            'a key column; give it an alias')
+
+    if not parsed:
+        if not keycols:
+            return pd.DataFrame()
+        keyed = df.loc[:, keycols].drop_duplicates()
+        return keyed.sort_values(keycols, na_position='last').reset_index(drop=True)
+
+    # A keyless bucket is one group over every row. Grouping on a
+    # constant array rather than a planted column keeps the frame's own
+    # columns - including any the caller named __dummy__ - untouched.
+    grouper = keycols or np.zeros(len(df), dtype=np.int8)
+    grouped = df.groupby(grouper, dropna=False, sort=bool(keycols))
+
+    columns: dict[str, pd.Series] = {}
+    for col, op, filt, alias in parsed:
+        # A filter needs the whole group frame, and a non-numeric column
+        # answers differently under pandas' own reduction, so neither
+        # reaches the vectorized branch.
+        fast = FAST_OPS.get(op)
+        if fast is not None and filt is None and pd.api.types.is_numeric_dtype(df[col]):
+            name, kwargs = fast
+            values = grouped[col].agg(name, **kwargs)
+        else:
+            # groupby.apply hides the key columns from the callable and
+            # reshapes a group result that is not a scalar. Walking the
+            # groups keeps the filter's view whole and pins the result
+            # to one row per group.
+            values = pd.Series(
+                [aggregate(group, col, op, filt) for _, group in grouped],
+                index=grouped.size().index,
+                dtype=object).infer_objects()
+        columns[alias] = values.rename(alias)
+
+    result = pd.concat(columns.values(), axis=1)
+    if not keycols:
+        return result.reset_index(drop=True)
+    return result.rename_axis(keycols).reset_index()
