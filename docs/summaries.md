@@ -55,7 +55,7 @@ rows.add_summary_column('spread', columns=['a', 'b'], row_func=max)
 ## Rendering a table
 
 ```python
-print(rows.pp)
+print(rows.to_string())
 ```
 
 ```
@@ -69,9 +69,14 @@ print(rows.pp)
 +-------+--------+
 ```
 
-`pp` renders through `prettytable`, and includes the summary row where
-one was declared. Where none was, it renders the plain table and runs no
-totaling at all, so `pp` on a large dataset costs nothing extra.
+`to_string()` renders through `prettytable`, and includes the summary
+row where one was declared. Where none was, it renders the plain table
+and runs no totaling at all, so it costs nothing extra on a large
+dataset.
+
+Where a summary IS declared, computing it converts the container to the
+declared column types - the same conversion any other read performs, so
+the call is not a pure read.
 
 For a log line rather than a table, `dump()` writes the dataset's
 attributes at debug level.

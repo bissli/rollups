@@ -983,7 +983,7 @@ def test_eq_compares_contents_not_identity():
     assert DataSet([{'a': 1}]) != DataSet([{'a': 2}])
 
 
-def test_pp_renders_header_and_data():
+def test_to_string_renders_header_and_data():
     """Verify the pretty table carries the column names and the data.
 
     Mutation: rendering only the header row, dropping the data rows.
@@ -991,7 +991,7 @@ def test_pp_renders_header_and_data():
     """
     ds = DataSet([{'a': 'r1', 'b': 2}])
 
-    out = str(ds.pp)
+    out = ds.to_string()
 
     assert 'a' in out
     assert 'b' in out
@@ -999,7 +999,7 @@ def test_pp_renders_header_and_data():
     assert '2' in out
 
 
-def test_pp_shows_total_only_once_a_summary_exists():
+def test_to_string_shows_total_only_once_a_summary_exists():
     """Verify the summary row reaches the table only after it is read.
 
     Mutation: rendering the summary unconditionally, which would print a
@@ -1009,22 +1009,22 @@ def test_pp_shows_total_only_once_a_summary_exists():
     """
     ds = DataSet([{'a': 'r1', 'b': 2}])
 
-    assert 'Total' not in str(ds.pp)
+    assert 'Total' not in ds.to_string()
 
     ds.summary
 
-    assert 'Total' in str(ds.pp)
+    assert 'Total' in ds.to_string()
 
 
-def test_pp_renders_a_column_less_dataset_that_declared_a_summary():
-    """Verify pp answers an empty table rather than raising.
+def test_to_string_renders_a_column_less_dataset_that_declared_a_summary():
+    """Verify to_string() answers an empty table rather than raising.
 
     A dataset that never had columns renders a zero-column table, and
     adding a row to one makes prettytable take max() over an empty
     sequence.
 
-    Mutation: dropping the `cols and` guard on the summary row, so pp
-        raises ValueError on a dataset with no columns.
+    Mutation: dropping the `cols and` guard on the summary row, so
+        to_string() raises ValueError on a dataset with no columns.
     Oracle: the string the pre-cache implementation returned for the
         same input, which never rendered that row because an empty
         summary dict is falsy.
@@ -1032,7 +1032,7 @@ def test_pp_renders_a_column_less_dataset_that_declared_a_summary():
     ds = DataSet()
     ds.add_summary_row()
 
-    assert ds.pp == '\n++\n||\n++\n++'
+    assert ds.to_string() == '\n++\n||\n++\n++'
 
 
 # --- Constructor Tests ---

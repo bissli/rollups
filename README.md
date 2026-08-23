@@ -93,7 +93,7 @@ column operations, and the three kinds of copy.
 | Reshape        | `bucket`, `pivot`, `flatten`, `transpose`, `unwind`                                |
 | Combine        | `join`, `diff`, `meld_datasets`, `match_rows`                                      |
 | Series         | `shift`, `backfill`, `pct_change`                                                  |
-| Present        | `summary`, `add_summary_row`, `add_summary_column`, `pp`                           |
+| Present        | `summary`, `add_summary_row`, `add_summary_column`, `to_string`             |
 | Screen         | `apply_screen`                                                                     |
 
 Every one of these is documented under [docs/](docs/README.md).
@@ -172,7 +172,7 @@ totals = DataSet([
     {'name': 'bo',  'amount':  80.0},
     ], columns=[('name', str), ('amount', float)])
 totals.add_summary_row(label='Total')
-print(totals.pp)
+print(totals.to_string())
 ```
 
 ```

@@ -1688,9 +1688,22 @@ class DataSet:
         columns = list(zip(cols, typs))
         return columns
 
-    @property
-    def pp(self) -> str:
+    def to_string(self) -> str:
         """Render the dataset as a text table, summary row included.
+
+        Returns
+        -------
+        str
+            The table, opening with a newline so it starts on its own
+            line in a log record.
+
+        Notes
+        -----
+        - Not a pure read. Where a summary row is declared, computing it
+          converts the container to the declared column types, the same
+          conversion any other read performs.
+        - A declared summary is rendered below a divider. A dataset that
+          never had columns renders an empty table rather than raising.
         """
         cols = self.cols
         t = PrettyTable(cols)
