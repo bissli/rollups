@@ -280,3 +280,24 @@ class DataSet:
         ds = self.copy()
         ds.extend(other)
         return ds
+
+    def ensure_types(self) -> None:
+        """Convert every value to its column's type, unless already done.
+
+        Notes
+        -----
+        - Idempotent, and cheap to call again: it reads one flag and
+          returns. A function outside this class that reads rows should
+          call it first rather than assume a caller did.
+        - Does nothing where the dataset was built with
+          `check_types=False`.
+        """
+        if not self._types_converted and self._check_types:
+            self.convert_container_types()
+            self._types_converted = True
+
+    def _ensure_types_converted(self) -> None:
+        """Convert types lazily on first access if needed. Alias of
+        `ensure_types`.
+        """
+        self.ensure_types()
