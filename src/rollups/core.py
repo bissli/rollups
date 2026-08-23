@@ -1333,3 +1333,39 @@ class DataSet:
         """Read a DataSet from a csv file or open handle. Alias of `read`.
         """
         return cls.read(file_or_name, **kw)
+
+    #
+    # writers
+    #
+
+    def write_csv(self, path_or_buf, **kwargs):
+        """Write the DataSet to a csv file or buffer.
+
+        See Also
+        --------
+        rollups.io.write_csv_file : the contract, the format hooks, and
+            the write-retry behavior
+        """
+        io.write_csv_file(self, path_or_buf, **kwargs)
+
+    def write_excel(self, path_or_buf, **kwargs):
+        """Write the DataSet to an Excel workbook.
+
+        See Also
+        --------
+        rollups.io.write_excel_file : the contract, the cell conversion
+            rules, and the write-retry behavior
+        """
+        io.write_excel_file(self, path_or_buf, **kwargs)
+
+    def json(self, columns=None, raw=False,
+             format_value=lambda x, y, _: x.get(y), **kw):
+        """Serialize the DataSet to a json string.
+
+        See Also
+        --------
+        rollups.io.to_json : the contract and the shape of the object
+            it emits
+        """
+        return io.to_json(self, columns=columns, raw=raw,
+                          format_value=format_value, **kw)
