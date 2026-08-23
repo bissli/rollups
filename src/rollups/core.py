@@ -475,3 +475,39 @@ class DataSet:
         sample = self.deepcopy()
         sample.container = random.sample(sample.container, min(max(n, 0), len(self.container)))
         return sample
+
+    def shift(self, colname, periods=1, new_colname=None) -> None:
+        """Shift a column's values forward or backward.
+
+        Parameters
+        ----------
+        colname : str
+            Column to shift.
+        periods : int, default 1
+            Positions to shift. Positive moves values forward, negative
+            backward. Zero leaves the values alone and logs a warning.
+        new_colname : str or None, default None
+            Column to write to. None writes back over `colname`.
+
+        Notes
+        -----
+        - Vacated positions hold None, and shifting by at least the row
+          count leaves the column all None.
+        """
+        colval = list(self.unwind(colname))
+        if periods > 0:
+            if periods >= len(colval):
+                colval = [None] * len(colval)
+            else:
+                colval = [None] * periods + colval[:-periods]
+        elif periods < 0:
+            if -periods >= len(colval):
+                colval = [None] * len(colval)
+            else:
+                colval = colval[-periods:] + [None] * -periods
+        else:
+            logger.warning('Shifting by 0, results will be unshifted')
+        colix = [i for i, x in enumerate(list(zip(*self.columns))[0]) if x == colname][0]
+        coltyp = self.columns[colix][1]
+        new_colname = new_colname or colname
+        self.add_column(new_colname, coltyp, values=colval)
