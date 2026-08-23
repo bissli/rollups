@@ -13,6 +13,7 @@ Notes
 
 import datetime
 import logging
+import re
 
 from opendate import Date, DateTime
 
@@ -101,3 +102,27 @@ def smart_type(val, infer_numeric_strings: bool = False):
         if numeric_type is not None:
             return numeric_type
     return val.__class__
+
+
+def is_dynamic_date_code(date_str: str) -> bool:
+    """Check if a date string is a dynamic code that should not be cached.
+
+    Parameters
+    ----------
+    date_str : str
+        Candidate value. A non-str is never a dynamic code.
+
+    Returns
+    -------
+    bool
+        True for a dynamic code.
+
+    Notes
+    -----
+    - The codes are T (today), Y (yesterday), P (previous business day),
+      M (last month end) and N (now).
+    - Each takes an optional offset, as in T-3 or P+2b.
+    """
+    if not isinstance(date_str, str):
+        return False
+    return bool(re.match(r'^[NTYPM]([-+]\d+)?b?$', date_str))
