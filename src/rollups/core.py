@@ -1,4 +1,5 @@
 import copy
+import datetime
 import logging
 import math
 import operator
@@ -8,6 +9,8 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any, Self
 
+import numpy as np
+from opendate import Date, DateTime, Time
 
 import libb
 from libb import lazydict as attrdict
@@ -1110,3 +1113,75 @@ class DataSet:
             raise ValueError('cols and typs length mismatch')
         return cls([attrdict(list(zip(cols, row))) for row in rows],
                    columns=list(zip(cols, typs)))
+
+    @classmethod
+    def from_dataframe(cls, df, cols=None, columns=None) -> Self:
+        """Build a DataSet from a pandas DataFrame.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Frame to convert.
+        cols : list of str or None, default None
+            Columns to keep. None keeps them all.
+        columns : list of tuple or None, default None
+            (name, type) pairs overriding the guessed type for those
+            columns.
+
+        Returns
+        -------
+        DataSet
+            Rows of the frame, with NaN read as None.
+        """
+        _columns = dict(guess_dataframe_dataset_columns(df))
+        if cols:
+            _columns = {col: typ for col, typ in _columns.items() if col in cols}
+            df = df[list(_columns.keys())]
+        if columns:
+            for col, typ in columns:
+                if col in _columns:
+                    _columns[col] = typ
+
+        rows = df.to_dict('records')
+        for row in rows:
+            for key in list(row.keys()):
+                val = row[key]
+                if isinstance(val, float) and np.isnan(val):
+                    row[key] = None
+
+        rows = [attrdict(row) for row in rows]
+        return cls(rows, columns=list(_columns.items()))
+
+    def convert_container_types(self):
+        """Convert every row's values to the column types.
+
+        Notes
+        -----
+        - A row missing a column gains it, holding None.
+        - A column with no declared type is left as it is.
+        """
+        cols_to_convert = [(name, typ) for name, typ in self.colmap.items()
+                           if typ not in {None, None.__class__}]
+
+        for row in self.container:
+            for name, typ in self.columns:
+                if name not in row:
+                    row[name] = None
+            for name, typ in cols_to_convert:
+                val = row[name]
+                if val is None:
+                    continue
+                if typ in {Date, datetime.date} and isinstance(val, datetime.date) and not isinstance(val, Date):
+                    row[name] = Date.instance(val)
+                    continue
+                if typ in {DateTime, datetime.datetime} and isinstance(val, datetime.datetime) and not isinstance(val, DateTime):
+                    row[name] = DateTime.instance(val)
+                    continue
+                if typ in {Time, datetime.time} and isinstance(val, datetime.datetime | datetime.time) and not isinstance(val, Time):
+                    row[name] = Time.instance(val)
+                    continue
+                if isinstance(val, typ):
+                    continue
+                row[name] = _convert_value(val, typ)
+
+        self._types_converted = True
