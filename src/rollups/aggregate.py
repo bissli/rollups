@@ -10,14 +10,12 @@ Notes
 - See docs/aggregation.md for the aggregation formats and worked
   examples.
 """
-
-
 import itertools
 import logging
 import operator
 from collections.abc import Callable, Hashable
 from functools import wraps
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from opendate import Date, DateTime, Time
 
@@ -25,6 +23,9 @@ import libb
 from libb import lazydict as attrdict
 
 from .types import smart_type
+
+if TYPE_CHECKING:
+    from .core import DataSet
 
 logger = logging.getLogger(__name__)
 
@@ -298,3 +299,36 @@ def pivot_dataset(dataset: 'DataSet', index_col, data_cols, pivot_col,
     grouped = dataset.bucket(index_col, pivoted)
 
     return grouped
+
+
+def transpose_dataset(dataset: 'DataSet', new_index_name: str,
+                      pivot_index: int = 0) -> 'DataSet':
+    """Transpose so one column's values become the column names.
+
+    Parameters
+    ----------
+    new_index_name : str
+        Name for the column holding the old column names.
+    pivot_index : int, default 0
+        Position of the column whose values become column names.
+
+    Returns
+    -------
+    DataSet
+        Transposed dataset.
+
+    Notes
+    -----
+    - Assumes the rows are already in the order wanted, and uses
+      every column.
+    """
+    pivot_col, _ = dataset.columns[pivot_index]
+    cols = [c for c, _ in dataset.columns]
+    new_index = cols[:pivot_index] + cols[(pivot_index + 1) :]
+    new_rows = []
+    new_cols = [new_index_name] + [old_row[pivot_col] for old_row in dataset]
+    for idx in new_index:
+        new_row = {new_index_name: idx}
+        new_row.update({old_row[pivot_col]: old_row[idx] for old_row in dataset})
+        new_rows.append(new_row)
+    return dataset.__class__(new_rows, cols=new_cols)
