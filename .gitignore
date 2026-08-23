@@ -1,2 +1,4 @@
 .root
 poetry.lock
+bench/
+bench.json
