@@ -104,6 +104,66 @@ def test_creation_from_attrdicts():
     assert DataSet([native]).container[0] is native
 
 
+def test_row_callable_is_a_computed_column():
+    """Verify a callable row value resolves on attribute access only.
+
+    A row is a `libb.lazydict`, so storing a callable gives the row a
+    computed column. Subscript and `.get` hand back the callable
+    itself, which is what lets conversion and the writers see it.
+
+    Mutation: binding `attrdict` to `libb.attrdict` rather than
+        `libb.lazydict`, so the callable is returned instead of called.
+    Oracle: hand-computed 1 + 2 against the three access styles.
+    """
+    ds = DataSet([{'a': 1, 'b': 2, 'total': lambda row: row.a + row.b}])
+    row = ds[0]
+
+    assert row.total == 3
+    assert callable(row['total'])
+    assert callable(row.get('total'))
+
+    row['a'] = 10
+
+    assert row.total == 12
+
+
+@pytest.mark.parametrize('declared', [str, float, int, Date])
+def test_row_callable_survives_type_conversion(declared):
+    """Verify conversion leaves a computed column callable, whatever
+    type the column declares.
+
+    Mutation: dropping the `callable(val)` guard from `_convert_value`
+        or from the per-row loop. `str` is the one target type whose
+        constructor accepts anything, so that column alone would freeze
+        `str(function)` - the repr and address - into the data, while
+        every other declared type happened to fail and leave it be.
+    Oracle: the callable is still callable after conversion, and still
+        computes 1 + 2.
+    """
+    ds = DataSet([{'a': 1, 'b': 2, 'total': lambda row: row.a + row.b}])
+    ds.columns = [('a', int), ('b', int), ('total', declared)]
+    ds.ensure_types()
+
+    assert callable(ds.container[0]['total'])
+    assert ds[0].total == 3
+
+
+def test_row_callable_survives_a_validated_append():
+    """Verify the validate=True path also leaves a computed column be.
+
+    That path calls `_convert_value` directly rather than going through
+    the per-row loop, so it needs the same guard.
+
+    Mutation: guarding only the per-row loop and not `_convert_value`.
+    Oracle: hand-computed 4 + 5 read off the appended row.
+    """
+    ds = DataSet([], columns=[('a', int), ('b', int), ('total', str)])
+    ds.append({'a': 4, 'b': 5, 'total': lambda row: row.a + row.b},
+              validate=True)
+
+    assert ds[0].total == 9
+
+
 def test_creation_from_dataset():
     """Verify DataSet(other) copies the row list but shares the rows.
 

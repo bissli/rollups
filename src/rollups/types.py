@@ -150,8 +150,21 @@ def _cached_datetime_parse(dt_str: str):
 
 def _convert_value(val, typ):
     """Convert a single value to the target type.
+
+    Notes
+    -----
+    - A None value, an undeclared type, and a callable are all returned
+      as they are.
+    - A row is a `libb.lazydict`, so a callable value is the row's own
+      computed column, resolved on attribute access. Converting it
+      would freeze `str(function)` - its repr and address - into the
+      data, and `str` is the one target type that accepts anything, so
+      without this guard that column alone would be destroyed while
+      every other declared type left it alone.
     """
     if val is None or typ is None or typ is None.__class__:
+        return val
+    if callable(val):
         return val
     if typ in {datetime.datetime, DateTime}:
         if isinstance(val, datetime.date):

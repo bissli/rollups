@@ -143,6 +143,28 @@ rows[0]['name']    # 'ana'
 It subclasses `libb.attrdict` and is not the same class - `lazydict`
 additionally calls a stored callable on access.
 
+### Computed columns
+
+Store a callable and the row gains a computed column. It is called
+with the row, so it reads whatever the row holds at the time:
+
+```python
+rows = DataSet([{'a': 1, 'b': 2, 'total': lambda row: row.a + row.b}])
+rows[0].total          # 3
+rows[0]['a'] = 10
+rows[0].total          # 12
+```
+
+- Only attribute access calls it. `row['total']` and
+  `row.get('total')` hand back the callable itself, which is what lets
+  the writers and type conversion see what they are dealing with.
+- Type conversion leaves a callable alone whatever the column
+  declares, so a computed column keeps working in a typed dataset.
+- The writers render it, they do not resolve it: a csv or workbook
+  cell gets the callable's `repr`. Add a real column with
+  `add_column(name, typ, value=fn)` for output, which calls `fn` once
+  per row and stores the result.
+
 `rows` iterates its rows, `len(rows)` counts them, and `rows[2]` and
 `rows[1:3]` index and slice as a list does.
 
