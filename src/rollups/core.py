@@ -1,4 +1,5 @@
 import logging
+from functools import wraps
 from typing import Self
 
 
@@ -19,6 +20,16 @@ from .types import islistoftuples  # noqa: F401
 from .types import smart_type  # noqa: F401
 
 logger = logging.getLogger(__name__)
+
+
+def ensure_types_converted(method):
+    """Decorator to ensure types are converted before accessing data.
+    """
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        self._ensure_types_converted()
+        return method(self, *args, **kwargs)
+    return wrapper
 
 
 class DataSet:
@@ -112,3 +123,77 @@ class DataSet:
 
     def __eq__(self, other):
         return self.container == other.container
+
+    #
+    # container-like methods
+    #
+
+    def append(self, obj: attrdict, validate: bool = False) -> None:
+        """Append a dict row to the dataset.
+
+        Parameters
+        ----------
+        obj : attrdict
+            Row to append.
+        validate : bool, default False
+            If True, convert types now. If False, conversion waits for
+            the first read, which is faster but defers any error.
+        """
+        if validate and self.columns and self._check_types:
+            converted = attrdict()
+            for name, typ in self.columns:
+                val = obj.get(name)
+                converted[name] = _convert_value(val, typ)
+            self.container.append(converted)
+        else:
+            self.container.append(obj)
+            self._types_converted = False
+
+    @ensure_types_converted
+    def __getitem__(self, key: int) -> attrdict:
+        # if they ask for a slice, return a new Dataset
+        if isinstance(key, slice):
+            ds = self.copy()
+            ds.container = ds.container[key]
+            return ds
+        return self.container[key]
+
+    def __len__(self) -> int:
+        return len(self.container)
+
+    def __bool__(self) -> bool:
+        return bool(self.__len__())
+
+    def __nonzero__(self):
+        return self.__bool__()
+
+    @ensure_types_converted
+    def __iter__(self):
+        return self.container.__iter__()
+
+    def extend(self, sequence: list[attrdict], validate: bool = False) -> None:
+        """Extend the dataset by a sequence of rows or another DataSet.
+
+        Parameters
+        ----------
+        sequence : list of attrdict or DataSet
+            Rows to add.
+        validate : bool, default False
+            If True, convert types now. If False, conversion waits for
+            the first read, which is faster but defers any error.
+        """
+        if validate and self.columns and self._check_types:
+            for obj in sequence:
+                converted = attrdict()
+                for name, typ in self.columns:
+                    val = obj.get(name)
+                    converted[name] = _convert_value(val, typ)
+                self.container.append(converted)
+        else:
+            self.container.extend(sequence)
+            self._types_converted = False
+
+    def __add__(self, other) -> Self:
+        ds = self.copy()
+        ds.extend(other)
+        return ds
