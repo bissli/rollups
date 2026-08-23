@@ -23,6 +23,7 @@ import random
 import time
 from collections.abc import Callable
 from functools import wraps
+from typing import Any, Protocol
 
 from opendate import Date
 
@@ -357,3 +358,27 @@ def log_excel_errors(func: Callable) -> Callable:
             raise
 
     return wrapper
+
+
+class ExcelBackend(Protocol):
+    """The workbook reader and writer the excel functions delegate to.
+
+    Notes
+    -----
+    - `parse` answers a dict of sheet name to list of row dicts.
+    - `dataset_to_excel` writes one dataset to one sheet. It reads only
+      `dataset.columns` and iterates the dataset.
+    - A module satisfies this as readily as an instance.
+    """
+
+    def parse(self, *args: Any, **kwargs: Any) -> dict[str, list[dict]]:
+        """Read a workbook into rows, keyed by sheet name."""
+        ...
+
+    def dataset_to_excel(self, dataset: Any, file_or_name: Any,
+                         **kwargs: Any) -> None:
+        """Write one dataset to a workbook."""
+        ...
+
+
+_EXCEL_BACKEND: ExcelBackend | None = None
