@@ -1,0 +1,185 @@
+# Getting started
+
+## Building a dataset
+
+The constructor takes rows as dictionaries:
+
+```python
+from rollups import DataSet
+
+rows = DataSet([
+    {'name': 'ana', 'group': 'a', 'amount': 120.5},
+    {'name': 'bo',  'group': 'b', 'amount':  80.0},
+    ])
+```
+
+Five ways in, each for a different shape of input:
+
+| Call                                  | Takes                                         |
+| ------------------------------------- | --------------------------------------------- |
+| `DataSet(container)`                  | dictionaries, or another `DataSet` to copy    |
+| `DataSet.from_list(rows, cols, typs)` | tuples plus the names and types to give them  |
+| `DataSet.from_empty(columns)`         | nothing - one row of empty values per column  |
+| `DataSet.from_dataframe(df)`          | a `pandas.DataFrame`                          |
+| `DataSet.read(path)`                  | a csv file - see [Reading and writing](io.md) |
+
+```python
+DataSet.from_list([('ana', 120.5)], ['name', 'amount'], [str, float])
+DataSet.from_empty([('name', str), ('amount', float)])   # '' and 0.0
+```
+
+`from_empty` gives `''` for str, `0` for int, `0.0` for float, and
+`None` for anything else - so a bool column starts at `None`, not
+`False`.
+
+## Columns
+
+A column is a `(name, type)` pair. Declare them, or let the constructor
+infer them by scanning the rows:
+
+```python
+records = [{'name': 'ana', 'amount': '120.5'}]
+
+DataSet(records, columns=[('name', str), ('amount', float)])
+DataSet(records)                              # amount infers as str
+DataSet(records, infer_numeric_strings=True)  # amount infers as float
+```
+
+`cols` and `typs` are an alternative to `columns`, taking the two halves
+separately. All three read back:
+
+```python
+rows.columns    # [('name', str), ('amount', float)]
+rows.cols       # ['name', 'amount']
+rows.typs       # [str, float]
+rows.colmap     # {'name': str, 'amount': float}
+```
+
+`exemplar` picks which row supplies the column names and starts type
+inference. It defaults to the first.
+
+### Changing the columns
+
+```python
+rows.add_column('doubled', float, value=lambda row: row['amount'] * 2)
+rows.add_column('tag', str, value='x')          # the same value everywhere
+rows.add_column('seq', int, values=[1, 2])      # one value per row
+rows.rename_column('amount', 'total')
+rows.remove_column('tag')
+```
+
+`value` takes a callable applied per row, or a plain value written into
+every row. `values` takes one value per row, positionally.
+
+`index` sets the position. Without it the column is appended - and that
+holds for a column already present, which is dropped from its old
+position and re-added at the end. Pass `index` to keep it where it was.
+
+`rename_column` and `remove_column` are no-ops on a name that is not
+there, logged at debug rather than raised.
+
+## Types
+
+Values convert to their column's type on **first read**, not at
+construction. A dataset built and discarded never pays for it, and
+the first read of any row converts the whole container.
+
+```python
+rows = DataSet([{'n': '42'}], columns=[('n', int)])
+rows[0].n     # 42, an int - converted on this read
+```
+
+Call `ensure_types()` to force the conversion before reading rows
+directly. It is idempotent and reads one flag on the second call.
+`convert_container_types()` is the pass it runs, and converts
+unconditionally - the call to re-run conversion after rows have been
+edited in place.
+
+`DataSet.guess_columns(rows)` is the inference the constructor uses. Call
+it directly to see what a set of rows infers to before committing to
+it.
+
+Pass `check_types=False` to switch conversion off for a dataset whose
+column types do not describe its values - which is what `flatten` does,
+because it puts values of several types into one column.
+
+### What converts
+
+`int` and `float` go through a permissive numeric parse, so `'1,200'`
+reads as `1200` and the accounting negative `'(1.5)'` reads as `-1.5`.
+`Date`, `DateTime` and `Time` parse from strings and from each other.
+
+Anything else falls through to `typ(val)`. That means **any class taking
+one argument works as a column type, with nothing to register**:
+
+```python
+class Money:
+
+    def __init__(self, value):
+        self.amount = float(value)
+
+
+DataSet([{'x': '1.50'}], columns=[('x', Money)])[0].x   # Money
+```
+
+A constructor that raises leaves the value untouched rather than failing
+the read, so a partly convertible column degrades instead of failing.
+Inference works the same way: a value of an unrecognized class infers as
+its own class.
+
+[Extending](extending.md#declaring-a-custom-column-type) carries the
+rest of the contract - what such a class should implement for joining,
+diffing, and the excel writer.
+
+## Reading rows
+
+A row is a `libb.lazydict`, so a column reads either way:
+
+```python
+rows[0].name       # 'ana'
+rows[0]['name']    # 'ana'
+```
+
+It subclasses `libb.attrdict` and is not the same class - `lazydict`
+additionally calls a stored callable on access.
+
+`rows` iterates its rows, `len(rows)` counts them, and `rows[2]` and
+`rows[1:3]` index and slice as a list does.
+
+## Copying
+
+Three copies, sharing progressively less:
+
+| Call | New container | New rows | New values |
+| --- | --- | --- | --- |
+| `copy()` | yes | no | no |
+| `shallowcopy()` | yes | yes | no |
+| `deepcopy()` | yes | yes | yes |
+
+**`copy()` shares its rows**, so adding a column to the copy adds it to
+the original too - both hold the same dictionaries:
+
+```python
+base = DataSet([{'v': 1}], columns=[('v', int)])
+base.copy().add_column('tag', str, value='x')
+base[0]     # {'v': 1, 'tag': 'x'} - the original changed
+```
+
+`shallowcopy()` gives each dataset its own rows, so adding or removing a
+column on one leaves the other alone. The values inside the rows are
+still shared, so mutating a list or dict held in a cell still shows up
+on both.
+
+`deepcopy()` shares nothing. Use it whenever the copy will be modified
+and neither of the two above is clearly enough.
+
+`copy()` and `shallowcopy()` take `empty=True` for the column structure
+with no rows.
+
+## Next
+
+- [Rows](rows.md) - adding, removing, ordering, filtering
+- [Screening](screening.md) - filtering by a text query
+- [Joining](joins.md) - combining two datasets
+- [Aggregating](aggregation.md) - `bucket`, `pivot`, `flatten`
+- [Reading and writing](io.md) - csv, json, excel
