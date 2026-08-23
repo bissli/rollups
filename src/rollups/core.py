@@ -1,5 +1,6 @@
 import copy
 import logging
+import math
 import operator
 import random
 from functools import wraps
@@ -610,3 +611,58 @@ class DataSet:
         values = libb.backfill(list(self.unwind(colname)))
         new_colname = new_colname or colname
         self.add_column(new_colname, coltyp, index=colix, values=values)
+
+    #
+    # pagination
+    #
+
+    @property
+    def pages(self) -> int:
+        """Total number of pages, from `total` and `per_page`.
+        """
+        return int(math.ceil(float(self.total) / float(self.per_page)))
+
+    @property
+    def has_prev(self) -> bool:
+        """Whether a page precedes the current one.
+        """
+        return self.page > 1
+
+    @property
+    def has_next(self) -> bool:
+        """Whether a page follows the current one.
+        """
+        return self.page < self.pages
+
+    def get_pages(self, start_max=2, left_this=2, right_this=5, end_max=2):
+        """Generate the page numbers to render for a pager.
+
+        Parameters
+        ----------
+        start_max : int, default 2
+            Pages always shown at the start.
+        left_this : int, default 2
+            Pages shown before the current one.
+        right_this : int, default 5
+            Pages shown after the current one.
+        end_max : int, default 2
+            Pages always shown at the end.
+
+        Returns
+        -------
+        Iterator
+            Page numbers, with '...' standing in for each gap.
+        """
+        last_p = 0
+        for this_p in range(1, self.pages + 1):
+            to_show = (
+                this_p <= start_max
+                or (self.page - left_this - 1 < this_p < self.page + right_this)
+                or self.pages - end_max < this_p
+            )
+            if to_show:
+                end_of_ellipsis = this_p != last_p + 1
+                if end_of_ellipsis:
+                    yield '...'
+                yield this_p
+                last_p = this_p
