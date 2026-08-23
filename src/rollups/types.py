@@ -9,7 +9,6 @@ Notes
   A dynamic date code is never cached, since it resolves against the
   current day.
 """
-import contextlib
 import datetime
 import logging
 import re
@@ -20,6 +19,12 @@ from opendate import Date, DateTime, Time
 import libb
 
 logger = logging.getLogger(__name__)
+
+DATE_TYPES = frozenset({datetime.date, Date})
+DATETIME_TYPES = frozenset({datetime.datetime, DateTime})
+TIME_TYPES = frozenset({datetime.time, Time})
+NUMERIC_TYPES = frozenset({int, float})
+TIME_VALUE_TYPES = (datetime.datetime, datetime.time)
 
 
 def infer_numeric_type(val: str) -> type | None:
@@ -171,31 +176,32 @@ def _convert_value(val, typ):
         return val
     if callable(val):
         return val
-    if typ in {datetime.datetime, DateTime}:
+    if typ in DATETIME_TYPES:
         if isinstance(val, datetime.date):
             return DateTime.instance(val)
         elif isinstance(val, str):
             if is_dynamic_date_code(val):
                 return DateTime.parse(val)
             return _cached_datetime_parse(val)
-    if typ in {datetime.date, Date}:
+    if typ in DATE_TYPES:
         if isinstance(val, datetime.date):
             return Date.instance(val)
         elif isinstance(val, str):
             if is_dynamic_date_code(val):
                 return Date.parse(val)
             return _cached_date_parse(val)
-    if typ in {datetime.time, Time}:
-        if isinstance(val, datetime.datetime | datetime.time):
+    if typ in TIME_TYPES:
+        if isinstance(val, TIME_VALUE_TYPES):
             return Time.instance(val)
         elif isinstance(val, str):
             return Time.parse(val)
-    with contextlib.suppress(Exception):
-        if typ in {int, float}:
+    try:
+        if typ in NUMERIC_TYPES:
             result = libb.numify(val, typ)
             return result if result is not None else val
         return typ(val)
-    return val
+    except Exception:
+        return val
 
 
 def force_type(somestr, date_fmt='%d%b%y'):

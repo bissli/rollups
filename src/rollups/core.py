@@ -33,6 +33,7 @@ from .types import infer_numeric_type  # noqa: F401
 from .types import is_dynamic_date_code  # noqa: F401
 from .types import islistoftuples  # noqa: F401
 from .types import smart_type  # noqa: F401
+from .types import DATE_TYPES, DATETIME_TYPES, TIME_TYPES, TIME_VALUE_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,8 @@ class DataSet:
     - Reading `.summary` calls `add_summary_row()` when no summary was asked
       for, so a caller never has to prepare one.
     """
+
+    _plan_cache = None
 
     def __init__(
         self,
@@ -205,7 +208,7 @@ class DataSet:
             # loop quadratic. Where the pass is already armed there is
             # nothing to do, since it will reach this row too.
             if self._types_converted and self._check_types:
-                self._convert_row(obj, self._converted_columns())
+                self._convert_row(obj, self._conversion_plan())
             else:
                 self._types_converted = False
 
@@ -254,7 +257,7 @@ class DataSet:
             # See the note in append(): converting the new rows beats
             # re-arming a pass over every row already converted.
             if self._types_converted and self._check_types:
-                cols_to_convert = self._converted_columns()
+                cols_to_convert = self._conversion_plan()
                 for obj in sequence:
                     self._convert_row(obj, cols_to_convert)
             else:
@@ -313,15 +316,15 @@ class DataSet:
 
         Notes
         -----
-        - Assumes the values are unique within the column.
+        - Assumes the values are unique within the column, and that
+          each is hashable.
         - Requires one value per row; a mismatch raises AssertionError.
+        - A row whose value was not named keeps its place ahead of the
+          named ones, since the sort is stable and it ranks below them.
         """
         assert len(self.container) == len(args), 'container length != args length'
-        for arg in args:
-            try:
-                self.container += [self.container.pop(find(self.container, col, arg, raise_err=True))]
-            except ValueError:
-                pass
+        rank = {val: i for i, val in enumerate(args)}
+        self.container.sort(key=lambda row: rank.get(row[col], -1))
 
     def pop(self, col, val) -> lazydict | None:
         """Remove and return the first row whose `col` holds `val`.
@@ -517,10 +520,11 @@ class DataSet:
         list of DataSet
             One single-row dataset per row, carrying the same columns.
         """
-        tods = lambda row: self.__class__([row], cols=self.cols, typs=self.typs)
-        ncols = len(self.cols)
-        return [tods(dict(zip(self.cols, x if ncols > 1 else (x,))))
-                for x in self.unwind(*self.cols)]
+        cols, typs = self.cols, self.typs
+        ncols = len(cols)
+        tods = lambda row: self.__class__([row], cols=cols, typs=typs)
+        return [tods(dict(zip(cols, x if ncols > 1 else (x,))))
+                for x in self.unwind(*cols)]
 
     def sample(self, n):
         """Return a random sample of `n` rows.
@@ -535,10 +539,18 @@ class DataSet:
         -------
         DataSet
             Deep copy holding the sampled rows.
+
+        Notes
+        -----
+        - Only the sampled rows are copied. Deep copying the container
+          first and sampling from the copy costs the full row count
+          however few rows are asked for.
         """
-        sample = self.deepcopy()
-        sample.container = random.sample(sample.container, min(max(n, 0), len(self.container)))
-        return sample
+        self.ensure_types()
+        chosen = self.copy(empty=True)
+        chosen.container = random.sample(self.container,
+                                         min(max(n, 0), len(self.container)))
+        return chosen.deepcopy()
 
     def shift(self, colname, periods=1, new_colname=None) -> None:
         """Shift a column's values forward or backward.
@@ -828,10 +840,19 @@ class DataSet:
         defaultdict
             Partition key to DataSet. Reading an absent key creates an
             empty dataset carrying this one's columns.
+
+        Notes
+        -----
+        - Rows are grouped first and handed over a container at a time.
+          Appending them one by one runs type conversion again over
+          rows this dataset has already converted.
         """
-        partitions = defaultdict(lambda: self.copy(empty=True))
+        rows_by_key = defaultdict(list)
         for row in self:
-            partitions[partition_func(row)].append(row)
+            rows_by_key[partition_func(row)].append(row)
+        partitions = defaultdict(lambda: self.copy(empty=True))
+        for key, rows in rows_by_key.items():
+            partitions[key].container = rows
         return partitions
 
     #
@@ -957,7 +978,8 @@ class DataSet:
         """
         columns = columns or [_[0] for _ in self.columns]
         for row in self:
-            row[label] = row_func(row[_] for _ in columns if row.get(_))
+            values = (row.get(col) for col in columns)
+            row[label] = row_func(val for val in values if val)
         self.add_column(label, float)
 
     #
@@ -1217,63 +1239,96 @@ class DataSet:
         - A row missing a column gains it, holding None.
         - A column with no declared type is left as it is.
         """
-        cols_to_convert = self._converted_columns()
+        plan = self._conversion_plan()
 
         for row in self.container:
-            self._convert_row(row, cols_to_convert)
+            self._convert_row(row, plan)
 
         self._types_converted = True
 
-    def _convert_row(self, row: lazydict,
-                     cols_to_convert: list[tuple[str, type]]) -> None:
+    @staticmethod
+    def _convert_row(row: lazydict, plan: tuple) -> None:
         """Convert one row in place to the declared column types.
 
         Parameters
         ----------
         row : lazydict
             Row to convert. Mutated in place.
-        cols_to_convert : list of tuple
-            (name, type) pairs to act on, from `_converted_columns()`.
-            Passed in rather than recomputed so a full-container pass
-            builds the list once instead of once per row.
+        plan : tuple
+            (names, plain, temporal), from `_conversion_plan()`. Passed
+            in rather than recomputed so a full-container pass builds it
+            once instead of once per row.
 
         Notes
         -----
         - A column the row is missing is added, holding None.
-        - A None value is left alone; a value already of the declared
-          type is left alone.
+        - A None value is left alone, and so is a value already of the
+          declared type.
+        - A date, datetime or time column also normalizes a value of the
+          plain stdlib class to the opendate class, which is why the
+          declared type alone does not settle whether to convert.
         """
-        for name, typ in self.columns:
+        names, plain, temporal = plan
+        for name in names:
             if name not in row:
                 row[name] = None
-        for name, typ in cols_to_convert:
+        for name, typ in plain:
+            val = row[name]
+            if val is not None and not isinstance(val, typ):
+                row[name] = _convert_value(val, typ)
+        for name, typ, target, source in temporal:
             val = row[name]
             if val is None:
                 continue
-            if typ in {Date, datetime.date} and isinstance(val, datetime.date) and not isinstance(val, Date):
-                row[name] = Date.instance(val)
-                continue
-            if typ in {DateTime, datetime.datetime} and isinstance(val, datetime.datetime) and not isinstance(val, DateTime):
-                row[name] = DateTime.instance(val)
-                continue
-            if typ in {Time, datetime.time} and isinstance(val, datetime.datetime | datetime.time) and not isinstance(val, Time):
-                row[name] = Time.instance(val)
-                continue
-            if isinstance(val, typ):
-                continue
-            row[name] = _convert_value(val, typ)
+            if isinstance(val, source) and not isinstance(val, target):
+                row[name] = target.instance(val)
+            elif not isinstance(val, typ):
+                row[name] = _convert_value(val, typ)
 
-    def _converted_columns(self) -> list[tuple[str, type]]:
-        """The (name, type) pairs conversion acts on.
+    def _conversion_plan(self) -> tuple:
+        """What one conversion pass has to do, worked out once.
 
         Returns
         -------
-        list of tuple
-            Every declared column except those typed None, which are
-            left as they are.
+        tuple
+            (names, plain, temporal). `names` is every declared column.
+            `plain` holds the (name, type) pairs converted by type
+            alone. `temporal` holds (name, type, target, source) for the
+            date family, where a value that is an instance of `source`
+            is normalized to `target` rather than converted.
+
+        Notes
+        -----
+        - A column typed None is named but never converted.
+        - Sorting the date family out here leaves one isinstance test
+          per ordinary value. Asking every value which family its column
+          belongs to instead is what a conversion pass used to spend
+          most of its time on.
+        - The plan is cached against a snapshot of the column list and
+          rebuilt whenever the two differ. Validating beats
+          invalidating: `columns` hands out the live list and
+          `add_column` edits it in place, so a cache cleared at each
+          known write would go stale on the writes nobody remembered.
         """
-        return [(name, typ) for name, typ in self.colmap.items()
-                if typ not in {None, None.__class__}]
+        cached = self._plan_cache
+        if cached is not None and cached[0] == self._columns:
+            return cached[1]
+        names, plain, temporal = [], [], []
+        for name, typ in self.colmap.items():
+            names.append(name)
+            if typ is None or typ is None.__class__:
+                continue
+            if typ in DATE_TYPES:
+                temporal.append((name, typ, Date, datetime.date))
+            elif typ in DATETIME_TYPES:
+                temporal.append((name, typ, DateTime, datetime.datetime))
+            elif typ in TIME_TYPES:
+                temporal.append((name, typ, Time, TIME_VALUE_TYPES))
+            else:
+                plain.append((name, typ))
+        plan = (names, plain, temporal)
+        self._plan_cache = (list(self._columns), plan)
+        return plan
 
     def to_array(self, columns=None, numpy_type=None):
         """Convert selected columns to a numpy array.

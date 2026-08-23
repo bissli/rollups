@@ -1472,5 +1472,54 @@ def test_extend_after_first_read_still_converts_the_new_rows():
     assert isinstance(ds[1]['id'], int)
 
 
+def test_retyping_a_column_converts_under_the_new_type():
+    """Verify a column retyped after a read converts under the new type.
+
+    Mutation: caching the conversion plan and reusing it without
+        rechecking the columns, so the column keeps its old type.
+    Oracle: hand-computed - '12' read as str is '12', as int is 12.
+    """
+    ds = DataSet([{'a': '12'}], columns=[('a', str)])
+    assert ds[0]['a'] == '12'
+
+    ds.add_column('a', int)
+
+    assert ds[0]['a'] == 12
+    assert isinstance(ds[0]['a'], int)
+
+
+def test_editing_the_columns_list_in_place_retypes_the_column():
+    """Verify an in-place column edit reaches the next conversion.
+
+    Mutation: clearing the conversion plan only where a setter runs,
+        which an in-place edit of the list `columns` hands out never
+        reaches.
+    Oracle: hand-computed - '34' under int is 34.
+    """
+    ds = DataSet([{'a': '12'}], columns=[('a', str)])
+    assert ds[0]['a'] == '12'
+
+    ds.columns[0] = ('a', int)
+    ds.append({'a': '34'})
+
+    assert ds.container[1]['a'] == 34
+
+
+def test_sample_converts_this_dataset_before_choosing_rows():
+    """Verify sampling converts the source, as taking a deep copy does.
+
+    Mutation: sampling the raw container and leaving the source
+        unconverted, so a later read still finds strings.
+    Oracle: hand-computed - '7' under int is 7, read off the container
+        so the read itself converts nothing.
+    """
+    ds = DataSet([{'a': '7'}, {'a': '8'}], columns=[('a', int)])
+
+    ds.sample(1)
+
+    assert ds.container[0]['a'] == 7
+    assert ds.container[1]['a'] == 8
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

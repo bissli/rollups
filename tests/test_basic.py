@@ -1204,3 +1204,21 @@ def test_dump_label_defaults_to_dataset(caplog):
         ds.dump()
 
     assert 'DataSet' in [r.getMessage() for r in caplog.records]
+
+
+def test_order_leaves_an_unnamed_row_in_front():
+    """Verify a row whose value was not named keeps its place in front.
+
+    Mutation: ranking an unnamed value alongside the named ones rather
+        than below them, which leaves it wherever it started.
+    Oracle: hand-computed - naming only 'b' over rows b, a, x moves b
+        to the end and leaves a, x ahead of it in their original order.
+    """
+    x = DataSet([
+        {'foo': 'b'},
+        {'foo': 'a'},
+        {'foo': 'x'}])
+
+    x.order('foo', 'b', 'zz', 'yy')
+
+    assert [row['foo'] for row in x] == ['a', 'x', 'b']
