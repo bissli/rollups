@@ -126,3 +126,9 @@ def is_dynamic_date_code(date_str: str) -> bool:
     if not isinstance(date_str, str):
         return False
     return bool(re.match(r'^[NTYPM]([-+]\d+)?b?$', date_str))
+
+
+def islistoftuples(x):
+    """Check that `x` is a sequence of (name, type) pairs, as `columns` wants.
+    """
+    return libb.issequence(x) and all(libb.issequence(y) and len(y) == 2 for y in x)
