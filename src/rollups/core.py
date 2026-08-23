@@ -3,9 +3,10 @@ import logging
 import math
 import operator
 import random
+from collections import defaultdict
 from collections.abc import Callable
 from functools import wraps
-from typing import Self
+from typing import Any, Self
 
 
 import libb
@@ -752,3 +753,23 @@ class DataSet:
             else:
                 result.container = [attrdict(row) for row in filtered_rows]
             return result
+
+    def partition(self, partition_func) -> defaultdict[Any, Self]:
+        """Split the dataset into new datasets by a partition function.
+
+        Parameters
+        ----------
+        partition_func : Callable
+            Called per row; its result keys the partition the row lands
+            in.
+
+        Returns
+        -------
+        defaultdict
+            Partition key to DataSet. Reading an absent key creates an
+            empty dataset carrying this one's columns.
+        """
+        partitions = defaultdict(lambda: self.copy(empty=True))
+        for row in self:
+            partitions[partition_func(row)].append(row)
+        return partitions
