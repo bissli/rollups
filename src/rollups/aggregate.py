@@ -14,6 +14,7 @@ Notes
 
 import itertools
 import logging
+import operator
 from collections.abc import Callable, Hashable
 from functools import wraps
 from typing import Any
@@ -195,3 +196,54 @@ def bucket_dataset(dataset: 'DataSet', keycols: str | list[str],
         result.add_column(alias, typ)
 
     return result
+
+
+def flatten_dataset(dataset: 'DataSet', kept, flattened,
+                    key: str = 'key', val: str = 'val') -> 'DataSet':
+    """Reverse-pivot, moving each flattened column into its own row.
+
+    Parameters
+    ----------
+    dataset : DataSet
+        Rows to reverse-pivot.
+    kept : str or list of str
+        Columns carried through unchanged.
+    flattened : list of str
+        Columns folded into rows, one row per column per input row.
+    key : str, default 'key'
+        Name of the column holding the flattened column's name.
+    val : str, default 'val'
+        Name of the column holding its value.
+
+    Returns
+    -------
+    DataSet
+        The kept columns plus `key` and `val`.
+
+    Notes
+    -----
+    - Flattening n columns over m rows gives n * m rows.
+    - The `val` column is typed float.
+    """
+    if not isinstance(kept, list | tuple):
+        kept = [kept]
+    # flatten puts values of different types into one val column,
+    # which a later read would coerce to the column's float type,
+    # so turn type checking off on the result.
+    ds = dataset.__class__(
+        columns=[(c, t) for c, t in dataset.columns if c in kept],
+        check_types=False)
+    ds.add_column(key, str)
+    ds.add_column(val, float)
+    if not kept:
+        for row in dataset.container:
+            for k in flattened:
+                ds.append(attrdict({key: k, val: row[k]}))
+        return ds
+    for keeps, grouped in itertools.groupby(dataset.container, operator.attrgetter(*kept)):
+        if not isinstance(keeps, list | tuple):
+            keeps = [keeps]
+        for row in grouped:
+            for k in flattened:
+                ds.append(attrdict(list(zip(kept, keeps)), **{key: k, val: row[k]}))
+    return ds
