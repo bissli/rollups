@@ -15,6 +15,7 @@ from opendate import Date, DateTime, Time
 import libb
 from libb import lazydict as attrdict
 
+from . import io
 # Re-exported so a caller importing from this module keeps working, and
 # so the package root can name them. noqa: the formatter strips an
 # import it sees as unused, and these have no local caller.
@@ -1215,3 +1216,59 @@ class DataSet:
             order.
         """
         return list(zip(*[list(row.values()) for row in self.container]))
+
+    @classmethod
+    def from_excel_sheets(cls, *args, **kwargs) -> Self:
+        """Generator of (sheetname, DataSet) items.
+
+        Returns
+        -------
+        Iterator of tuple
+            (sheetname, DataSet) for each parsed sheet.
+
+        Notes
+        -----
+        - Pass infer_numeric_strings=True to type numeric strings as int
+          or float rather than str.
+        """
+        opts = {
+            'columns': kwargs.pop('columns', None),
+            'cols': kwargs.pop('cols', None),
+            'typs': kwargs.pop('typs', None),
+            'exemplar': kwargs.pop('exemplar', 0),
+            'infer_numeric_strings': kwargs.pop('infer_numeric_strings', False),
+        }
+        for k, v in list(io.parse_excel_sheets(*args, **kwargs).items()):
+            yield k, cls(v, **opts)
+
+    @classmethod
+    @log_excel_errors
+    def from_excel(cls, *args, **kwargs) -> Self:
+        """Create DataSet object from an excel sheet, inferring column types.
+
+        Returns
+        -------
+        DataSet or dict
+            Rows of the single parsed sheet, or an empty dict where the
+            workbook yielded no sheet.
+
+        Notes
+        -----
+        - If stream, pass in stream as key in kwargs.
+        - Pass infer_numeric_strings=True to type numeric strings as int
+          or float rather than str.
+        """
+        opts = {
+            'columns': kwargs.pop('columns', None),
+            'cols': kwargs.pop('cols', None),
+            'typs': kwargs.pop('typs', None),
+            'exemplar': kwargs.pop('exemplar', 0),
+            'infer_numeric_strings': kwargs.pop('infer_numeric_strings', False),
+        }
+        sheetnames = kwargs.get('sheetnames', [])
+        if not sheetnames:
+            kwargs['first'] = True
+        else:
+            assert len(sheetnames) == 1, 'Only one sheet allowed in `from_excel`'
+        rows = io.parse_excel_sheets(*args, **kwargs)
+        return cls(rows[list(rows.keys())[0]], **opts) if rows else {}
