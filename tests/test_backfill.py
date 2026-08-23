@@ -208,14 +208,19 @@ def test_backfill_single_row():
     """Verify a one-row column is copied as it stands.
 
     Mutation: an early return for a column of fewer than two rows, so
-        the target column is never written.
-    Oracle: hand-computed cols ['copy', 'val'] with [42] in both, and
-        [None] for a lone gap.
+        the target column is never written; or an in-place fill that
+        writes the carried None over a value that was already there.
+    Oracle: hand-computed cols ['copy', 'val'] with [42] in both, [42]
+        again for the in-place fill, and [None] for a lone gap.
     """
     ds = DataSet([{'val': 42}])
     ds.backfill('val', 'copy')
     assert ds.cols == ['copy', 'val']
     assert list(ds.unwind('copy')) == [42]
+
+    inplace = DataSet([{'val': 42}])
+    inplace.backfill('val')
+    assert list(inplace.unwind('val')) == [42]
 
     gap = DataSet([{'val': None}])
     gap.backfill('val')

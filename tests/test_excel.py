@@ -154,6 +154,47 @@ def test_write_excel_hands_the_backend_a_working_cell_converter(spy):
     assert seen['amount'] == 2
 
 
+def test_write_excel_spells_out_a_render_as_str_value(spy):
+    """Verify `render_as_str` skips the number parse the converter runs.
+
+    Mutation: dropping the `render_as_str` branch from convert_value,
+    so a label whose text merely looks numeric collapses to that
+    number.
+    Oracle: two classes differing only in the flag -- the flagged one
+    renders '2', the plain one parses to the int 2.
+    """
+
+    class Spelled:
+        render_as_str = True
+
+        def __str__(self):
+            return '2'
+
+    class Plain:
+
+        def __str__(self):
+            return '2'
+
+    seen = {}
+
+    def capture(dataset, file_or_name, **kwargs):
+        convert = kwargs['convert_value']
+        row = dataset[0]
+        seen['spelled'] = convert(row, 'spelled')
+        seen['plain'] = convert(row, 'plain')
+
+    spy.dataset_to_excel = capture
+
+    # Leave the columns to be guessed: declaring either as str makes
+    # ensure_types() stringify the object before the converter sees it,
+    # and the branch under test never runs.
+    ds = DataSet([{'spelled': Spelled(), 'plain': Plain()}])
+    ds.write_excel(_io.BytesIO())
+
+    assert seen['spelled'] == '2'
+    assert seen['plain'] == 2
+
+
 def test_write_excel_retries_exactly_once_on_an_unwritable_path(spy):
     """Verify the write-retry fires once, not once per decorator layer.
 
