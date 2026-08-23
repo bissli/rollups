@@ -1,5 +1,6 @@
 import copy
 import datetime
+import json
 import logging
 import math
 import operator
@@ -7,6 +8,7 @@ import random
 from collections import defaultdict
 from collections.abc import Callable
 from functools import wraps
+from pydoc import locate
 from typing import Any, Self
 
 import numpy as np
@@ -1272,3 +1274,62 @@ class DataSet:
             assert len(sheetnames) == 1, 'Only one sheet allowed in `from_excel`'
         rows = io.parse_excel_sheets(*args, **kwargs)
         return cls(rows[list(rows.keys())[0]], **opts) if rows else {}
+
+    @classmethod
+    def from_json(cls, data, raw=True) -> Self | tuple[Self, dict]:
+        """Build a DataSet from json text.
+
+        Parameters
+        ----------
+        data : str
+            Json text. ISO date strings are parsed back to dates.
+        raw : bool, default True
+            If True, read a bare array of row objects. If False, read
+            an object carrying `data`, and optionally `order`, `types`
+            and any further keys.
+
+        Returns
+        -------
+        DataSet or tuple
+            A DataSet where `raw` is True; otherwise (DataSet, other),
+            where other holds every key but `data`, `order` and
+            `types`.
+
+        Notes
+        -----
+        - A declared type wins over the parsed one, so `types` of
+          ['int'] reads 2.0 as 2 rather than as a float.
+        """
+        obj = json.loads(data, cls=libb.JSONDecoderISODate)
+        if raw:
+            return cls(obj)
+        handle_date = {'date': datetime.date, 'datetime': datetime.datetime}
+        types = [handle_date.get(typ, locate(typ)) for typ in (obj.get('types') or [])]
+        ds = cls(obj['data'], cols=obj.get('order'), typs=types)
+        other = {k: v for k, v in obj.items() if k not in {'data', 'order', 'types'}}
+        return ds, other
+
+    @classmethod
+    def read(cls, file_or_name, **kw) -> Self:
+        """Read a DataSet from a csv file or open handle.
+
+        Returns
+        -------
+        DataSet
+            Parsed rows, with `filename` set to the source.
+
+        See Also
+        --------
+        rollups.io.read_csv_rows : the csv format, the type suffixes,
+            and the rename_fields hook
+        """
+        rows, columns = io.read_csv_rows(file_or_name, **kw)
+        ds = cls(rows, columns=columns)
+        ds.filename = file_or_name
+        return ds
+
+    @classmethod
+    def from_csv(cls, file_or_name, **kw) -> Self:
+        """Read a DataSet from a csv file or open handle. Alias of `read`.
+        """
+        return cls.read(file_or_name, **kw)
