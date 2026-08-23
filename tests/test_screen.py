@@ -9,7 +9,7 @@ import operator
 
 import pytest
 from rollups import DataSet, apply_screen, get_or_val, interpret_screen
-from rollups import matches
+from rollups import matches, screen
 
 import libb
 
@@ -385,6 +385,29 @@ def test_apply_screen_not_equal_drops_matching_rows():
     apply_screen(ds, {'group': '!=Magenta'})
 
     assert [row['group'] for row in ds] == ['Crimson', 'Indigo']
+
+
+def test_apply_screen_parses_the_query_once(monkeypatch):
+    """Verify the screen string is parsed once, not once per row.
+
+    Mutation: parsing inside the row predicate, which reparses the same
+        string for every row in the dataset.
+    Oracle: a counting spy over interpret_screen - four rows, one call.
+    """
+    calls = []
+    real = screen.interpret_screen
+
+    def spy(query):
+        calls.append(query)
+        return real(query)
+
+    monkeypatch.setattr(screen, 'interpret_screen', spy)
+    ds = DataSet([{'score': n} for n in (10, 20, 30, 40)])
+
+    apply_screen(ds, {'score': '>15'})
+
+    assert [row['score'] for row in ds] == [20, 30, 40]
+    assert len(calls) == 1
 
 
 if __name__ == '__main__':

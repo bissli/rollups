@@ -177,9 +177,12 @@ def apply_screen(dataset, filters):
         if col not in dataset.cols:
             logger.warning(f'Skipping unmatched column {col}={screen}')
             continue
+        # Parse the query once. Parsing it inside the predicate reparses
+        # the same string for every row in the dataset.
+        clauses = interpret_screen(screen)
         screen_fn = lambda row: all(
             matches(cmp, row.get(col), op(get_or_val(cmp_val, row), op_val))
-            for cmp, cmp_val, op, op_val in interpret_screen(screen)
+            for cmp, cmp_val, op, op_val in clauses
         )
         dataset.filter_data(screen_fn)
         logger.info(f'Filtered dataset to {len(dataset)} rows')
