@@ -10,8 +10,6 @@ Notes
 - A csv header field may carry a type suffix: `name:s`, `age:i`,
   `score:f`, `on:b`, `when:d`. A field without one reads as str.
 """
-
-
 import csv
 import datetime
 import itertools
@@ -23,12 +21,15 @@ import random
 import time
 from collections.abc import Callable
 from functools import wraps
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
-from opendate import Date
+from opendate import Date, DateTime, Time
 
 import libb
 from libb import lazydict as attrdict
+
+if TYPE_CHECKING:
+    from .core import DataSet
 
 logger = logging.getLogger(__name__)
 
@@ -446,3 +447,53 @@ def parse_excel_sheets(*args: Any, **kwargs: Any) -> dict[str, list[dict]]:
     """
     kwargs.update({'read_only': True})
     return excel_backend().parse(*args, **kwargs)
+
+
+# Notes:
+# - arg=1 is path_or_buf, and the conversion is the first statement
+#   of the body, so the retry sees the state the decorated method
+#   used to see.
+@on_error_randomize(arg=1)
+def write_excel_file(dataset: 'DataSet', path_or_buf,
+                     **kwargs) -> None:
+    """Write the DataSet to an Excel workbook.
+
+    Parameters
+    ----------
+    path_or_buf : str or file-like
+        Path to write, or a buffer to write into.
+    **kwargs
+        Passed through to the excel writer. `convert_value`
+        overrides how a cell value is rendered.
+
+    Notes
+    -----
+    - By default a date, time or builtin passes through unchanged,
+      an iterable is joined with commas, and anything else is
+      parsed as a number where it can be, else rendered as a str.
+    - An object carrying a true `render_as_str` attribute skips that
+      number parse and is written as its str, which is how a class
+      whose text form only looks numeric keeps its own spelling.
+    - Where the path cannot be written, a randomized name is tried
+      once before giving up.
+    """
+    dataset.ensure_types()
+
+    def convert_value(row, col):
+        obj = row.get(col)
+        if isinstance(obj, Date | DateTime | Time):
+            return obj
+        if not isinstance(obj, str) and hasattr(obj, '__iter__'):
+            return ','.join([str(_ or '') for _ in obj])
+        if obj.__class__.__module__ == 'builtins':
+            return obj
+        if getattr(obj, 'render_as_str', False):
+            return str(obj)
+        if asnum := libb.parse(str(obj)):
+            return asnum
+        return str(obj)
+
+    if 'convert_value' not in kwargs:
+        kwargs.update(convert_value=convert_value)
+
+    excel_backend().dataset_to_excel(dataset, path_or_buf, **kwargs)
