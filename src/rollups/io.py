@@ -382,3 +382,44 @@ class ExcelBackend(Protocol):
 
 
 _EXCEL_BACKEND: ExcelBackend | None = None
+
+
+def register_excel_backend(backend: ExcelBackend) -> None:
+    """Install the workbook reader and writer the excel functions use.
+
+    Parameters
+    ----------
+    backend : ExcelBackend
+        Object carrying `parse` and `dataset_to_excel`.
+
+    Notes
+    -----
+    - Call once at import time. A second call replaces the first.
+    - This package never imports a backend itself, so a caller that
+      wants excel registers its own. See docs/extending.md.
+    """
+    # A module-level registry is the point: the backend has to outlive
+    # this call, and there is exactly one of it.
+    global _EXCEL_BACKEND  # noqa: PLW0603
+    _EXCEL_BACKEND = backend
+
+
+def excel_backend() -> ExcelBackend:
+    """The registered backend.
+
+    Returns
+    -------
+    ExcelBackend
+        Whatever was last registered.
+
+    Raises
+    ------
+    RuntimeError
+        If no backend was registered.
+    """
+    if _EXCEL_BACKEND is None:
+        raise RuntimeError(
+            'No excel backend registered. Call '
+            'rollups.register_excel_backend(obj) with an object carrying '
+            'parse and dataset_to_excel.')
+    return _EXCEL_BACKEND
