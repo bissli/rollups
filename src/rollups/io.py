@@ -272,7 +272,7 @@ def write_csv_file(dataset: 'DataSet', path_or_buf, **kwargs) -> None:
         _emit(dataset, path_or_buf, **kwargs)
 
 
-def read_json_value(row, col, typ):
+def read_json_value(row, col, _typ):
     """Read one value for `to_json`, absent or None alike.
 
     Parameters
@@ -281,9 +281,9 @@ def read_json_value(row, col, typ):
         Row to read.
     col : str
         Column to read.
-    typ : type
-        Declared type of the column. Unused; the signature is the hook
-        `to_json` calls, and a caller's own hook is given the type.
+    _typ : type
+        Declared type of the column. Unused here; the signature is the
+        hook `to_json` calls, and a caller's own hook is given the type.
 
     Returns
     -------

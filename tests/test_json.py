@@ -82,5 +82,20 @@ def test_json_converts_declared_types_first():
     assert ds.json(raw=True) == '[{"n": 5, "d": "2014-10-01"}]'
 
 
+def test_json_writes_null_for_a_column_the_row_does_not_carry():
+    """Verify a declared column absent from a row serializes as null.
+
+    Mutation: reading the row through its own get(), which answers a
+        missing key with the dict attribute of that name, so a column
+        named after one reaches the encoder as a bound method.
+    Oracle: hand-written json text; the encoder refuses a bound method
+        outright, so the wrong reader cannot even produce output.
+    """
+    ds = DataSet([{'a': 1}], columns=[('a', int), ('items', str)],
+                 check_types=False)
+
+    assert ds.json(raw=True) == '[{"a": 1, "items": null}]'
+
+
 if __name__ == '__main__':
     pytest.main([__file__])

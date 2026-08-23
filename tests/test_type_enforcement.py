@@ -1413,10 +1413,11 @@ def test_dynamic_date_code_never_enters_the_parse_cache():
 
 
 def test_convert_container_types_converts_every_column_of_a_row():
-    """Verify a temporal column does not end conversion of its row.
+    """Verify every column of a row converts, temporal ones included.
 
-    Mutation: `continue` turned into `break` in the Date, DateTime or
-        Time branch, abandoning every later column of that row.
+    Mutation: dropping the temporal pass from the conversion plan, so
+        a date, datetime or time column keeps its stdlib value while
+        the plain columns beside it still convert.
     Oracle: hand-computed row - each of the four columns holds a value
         of the wrong class going in, and the right one coming out.
     """
@@ -1437,6 +1438,31 @@ def test_convert_container_types_converts_every_column_of_a_row():
     assert isinstance(row['t'], Time)
     assert row['n'] == 42
     assert isinstance(row['n'], int)
+
+
+def test_a_stdlib_typed_temporal_column_yields_the_opendate_class():
+    """Verify a column typed datetime.date still reads back as Date.
+
+    Mutation: filing a date, datetime or time column with the plain
+        ones in the conversion plan. A stdlib value already satisfies
+        isinstance against its stdlib type, so it would be left alone
+        and the opendate class never reached.
+    Oracle: hand-computed - a datetime.date under a datetime.date
+        column comes back a Date, and likewise for datetime and time.
+    """
+    ds = DataSet([{
+        'd': datetime.date(2024, 3, 5),
+        'dt': datetime.datetime(2024, 3, 5, 13, 45),
+        't': datetime.time(14, 30),
+        }], columns=[('d', datetime.date), ('dt', datetime.datetime),
+                     ('t', datetime.time)])
+
+    ds.convert_container_types()
+    row = ds.container[0]
+
+    assert type(row['d']) is Date
+    assert type(row['dt']) is DateTime
+    assert type(row['t']) is Time
 
 
 def test_append_after_first_read_still_converts_the_new_row():
