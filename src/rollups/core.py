@@ -1,4 +1,5 @@
 import logging
+import operator
 from functools import wraps
 from typing import Self
 
@@ -192,6 +193,69 @@ class DataSet:
         else:
             self.container.extend(sequence)
             self._types_converted = False
+
+    def sort(self, key=None, reverse=False) -> Self:
+        """Sort rows the way list.sort does.
+
+        Parameters
+        ----------
+        key : Callable or str or list or tuple of str or None, default None
+            A callable sorts by its result; a name or list or tuple of
+            names sorts by those attributes. None sorts by each column
+            value, left to right.
+        reverse : bool, default False
+            If True, sort descending.
+
+        Returns
+        -------
+        DataSet
+            Self, sorted in place.
+
+        Notes
+        -----
+        - For SQL-style `order by` with per-column direction, use
+          `sort_data` instead.
+        """
+        if not key:
+            self.container.sort(
+                key=lambda row: tuple(row[c] for c in self.cols),
+                reverse=reverse)
+            return self
+        if callable(key):
+            self.container.sort(key=key, reverse=reverse)
+            return self
+        if not isinstance(key, list | tuple):
+            key = (key,)
+        self.container.sort(key=operator.attrgetter(*key), reverse=reverse)
+        return self
+
+    def reverse(self) -> Self:
+        """Reverse the row order in place, returning self.
+        """
+        self.container.reverse()
+        return self
+
+    def order(self, col, *args):
+        """Rearrange rows to the order of the values given.
+
+        Parameters
+        ----------
+        col : str
+            Column matched against each value.
+        *args
+            Values, in the order the rows should end up.
+
+        Notes
+        -----
+        - Assumes the values are unique within the column.
+        - Requires one value per row; a mismatch raises AssertionError.
+        """
+        assert len(self.container) == len(args), 'container length != args length'
+        for arg in args:
+            try:
+                self.container += [self.container.pop(find(self.container, col, arg, raise_err=True))]
+            except ValueError:
+                pass
 
     def __add__(self, other) -> Self:
         ds = self.copy()
