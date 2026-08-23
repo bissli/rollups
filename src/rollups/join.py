@@ -147,11 +147,16 @@ def join_datasets(adataset: 'DataSet', akey: tuple[str],
     merge_plan = [(k, asource.get(k, ABSENT), bsource.get(k, ABSENT))
                   for k in set(akeys + bkeys)]
 
+    # A row is a lazydict, whose get() is written in Python and answers
+    # a missing key with an attribute of the same name. A merged row
+    # wants the column or nothing, so read through the dict method.
+    read = dict.get
+
     def merge_rows(arow, brow):
         jrow = lazydict()
         for k, acolname, bcolname in merge_plan:
-            _aval = None if acolname is ABSENT else arow.get(acolname)
-            _bval = None if bcolname is ABSENT else brow.get(bcolname)
+            _aval = None if acolname is ABSENT else read(arow, acolname)
+            _bval = None if bcolname is ABSENT else read(brow, bcolname)
             if bfirst:
                 jrow[k] = _bval if _bval is not None else _aval
             else:

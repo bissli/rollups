@@ -1154,3 +1154,20 @@ def test_join_keeps_a_column_named_none():
     joined = DataSet.join(a, ('k',), b, ('k',), jointype='inner')
 
     assert dict(joined[0]) == {'None': 1, 'k': 2, 'y': 9}
+
+
+def test_join_reads_a_missing_column_as_none_not_a_dict_method():
+    """Verify a column a row lacks joins as None, whatever it is named.
+
+    Mutation: reading the row through its own get(), which answers a
+        missing key with the dict attribute of that name, so a column
+        named after one lands a bound method in the joined row.
+    Oracle: hand-computed - neither side carries 'items', so it joins
+        as None rather than as the dict method of that name.
+    """
+    a = DataSet([{'k': 1, 'x': 'left'}])
+    b = DataSet([{'k': 1, 'y': 'right'}])
+
+    joined = DataSet.join(a, ('k',), b, ('k',), acol=['k', 'x', 'items'])
+
+    assert joined[0]['items'] is None

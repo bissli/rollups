@@ -71,8 +71,16 @@ def bucket_dataset(dataset: 'DataSet', keycols: str | list[str],
     dataset.ensure_types()
 
     def non_none(iterdict, col):
-        """For passing-in unwound rows."""
-        values = (row.get(col) for row in iterdict)
+        """For passing-in unwound rows.
+
+        Notes
+        -----
+        - Reads through the dict method rather than the row's own
+          `get`, which is written in Python and answers a missing key
+          with the attribute of that name, so a column named after one
+          would aggregate a bound method.
+        """
+        values = (dict.get(row, col) for row in iterdict)
         return [val for val in values if val is not None] or [None]
 
     def infer_type_from_rows(rows: list, col: str) -> type:
