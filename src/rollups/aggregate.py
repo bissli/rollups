@@ -21,6 +21,7 @@ from typing import Any
 
 from opendate import Date, DateTime, Time
 
+import libb
 from libb import lazydict as attrdict
 
 from .types import smart_type
@@ -247,3 +248,53 @@ def flatten_dataset(dataset: 'DataSet', kept, flattened,
             for k in flattened:
                 ds.append(attrdict(list(zip(kept, keeps)), **{key: k, val: row[k]}))
     return ds
+
+
+def pivot_dataset(dataset: 'DataSet', index_col, data_cols, pivot_col,
+                  aggr=sum, alias=lambda x, _: x) -> 'DataSet':
+    """Pivot dataset to turn row values into columns.
+
+    Each distinct value of `pivot_col` becomes a column, holding the
+    aggregated `data_cols` for that `index_col` group.
+
+    Parameters
+    ----------
+    dataset : DataSet
+        Rows to pivot.
+    index_col : str
+        Column to use as the row index.
+    data_cols : str or list of str
+        Column(s) to aggregate.
+    pivot_col : str
+        Column whose values become the new column names.
+    aggr : Callable, default sum
+        Aggregation applied to each cell.
+    alias : Callable, default lambda x, _: x
+        Builds a column name from (pivot_value, data_col).
+
+    Returns
+    -------
+    DataSet
+        Pivoted dataset.
+
+    Notes
+    -----
+    - Pivoting several data columns needs an `alias` that varies with
+      the data column, or they collide on one generated name.
+    - See docs/aggregation.md for a worked example.
+    - Groups through `dataset.bucket`, the method, so a subclass that
+      overrides it is honored.
+    """
+    dataset.ensure_types()
+    if isinstance(data_cols, str):
+        data_cols = [data_cols]
+    new_cols = libb.unique(row[pivot_col] for row in dataset)
+    filterby = \
+        lambda col, data_col: \
+        lambda rows: \
+        [row[data_col] for row in rows if row[pivot_col] == col] or [0.0]
+    pivoted = [(c, aggr, filterby(c, d), alias(c, d))
+               for c in new_cols for d in data_cols]
+    grouped = dataset.bucket(index_col, pivoted)
+
+    return grouped
