@@ -1,6 +1,7 @@
 import copy
 import logging
 import operator
+import random
 from functools import wraps
 from typing import Self
 
@@ -456,3 +457,21 @@ class DataSet:
         ncols = len(self.cols)
         return [tods(dict(zip(self.cols, x if ncols > 1 else (x,))))
                 for x in self.unwind(*self.cols)]
+
+    def sample(self, n):
+        """Return a random sample of `n` rows.
+
+        Parameters
+        ----------
+        n : int
+            Rows wanted. More than the dataset holds returns them all,
+            and a negative count returns none.
+
+        Returns
+        -------
+        DataSet
+            Deep copy holding the sampled rows.
+        """
+        sample = self.deepcopy()
+        sample.container = random.sample(sample.container, min(max(n, 0), len(self.container)))
+        return sample
