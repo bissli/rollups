@@ -1,0 +1,41 @@
+[project]
+name = "rollups"
+version = "0.1.0"
+description = "An iterable of dictionaries, with typed columns"
+authors = [{ name = "bissli", email = "bissli@xyz.org" }]
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11,<4.0"
+keywords = ["dataset", "records", "rows", "csv", "dataframe"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Typing :: Typed",
+]
+dependencies = [
+  "pandas",
+  "libb-util",
+  "opendate",
+  "prettytable (>=3.12.0)",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.urls]
+Homepage = "https://github.com/bissli/rollups"
+Repository = "https://github.com/bissli/rollups"
+Documentation = "https://github.com/bissli/rollups/blob/master/docs/README.md"
+
+[tool.poetry]
+packages = [{ include = "rollups", from = "src" }]
+
+[tool.poetry.group.dev.dependencies]
+pdbpp = { git = "https://github.com/pdbpp/pdbpp.git" }
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
