@@ -1137,3 +1137,20 @@ def test_join_datasets_is_reachable_standalone_and_matches_the_method():
 
     assert [dict(r) for r in direct] == [{'id': 1, 'x': 10, 'y': 20}]
     assert [dict(r) for r in direct] == [dict(r) for r in method]
+
+
+def test_join_keeps_a_column_named_none():
+    """Verify a column whose name is None survives the merge.
+
+    Mutation: marking a column the other side lacks with None rather
+        than a distinct sentinel, so a column literally named None
+        reads as absent and its value is dropped.
+    Oracle: hand-computed - the left row holds 1 under the None column,
+        which the merge renders under the key 'None'.
+    """
+    a = DataSet([{None: 1, 'k': 2}])
+    b = DataSet([{'y': 9, 'k': 2}])
+
+    joined = DataSet.join(a, ('k',), b, ('k',), jointype='inner')
+
+    assert dict(joined[0]) == {'None': 1, 'k': 2, 'y': 9}

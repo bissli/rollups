@@ -11,13 +11,16 @@ Notes
 import logging
 from typing import TYPE_CHECKING
 
-from libb import OrderedSet
-from libb import lazydict
+from libb import OrderedSet, lazydict
 
 if TYPE_CHECKING:
     from .core import DataSet
 
 logger = logging.getLogger(__name__)
+
+# Marks a merged column one side does not carry, so a column genuinely
+# named None is still read from the side that has it.
+ABSENT = object()
 
 
 def join_datasets(adataset: 'DataSet', akey: tuple[str],
@@ -135,14 +138,24 @@ def join_datasets(adataset: 'DataSet', akey: tuple[str],
     else:
         raise ValueError(f'This join type is not supported {jointype}')
 
+    # Every merged row carries the same keys over the same source
+    # columns, so work both out once rather than per row.
+    akeys = [f'{c}{amod}' for c in acol]
+    bkeys = [f'{c}{bmod}' for c in bcol]
+    asource = dict(zip(akeys, acol))
+    bsource = dict(zip(bkeys, bcol))
+    merge_plan = [(k, asource.get(k, ABSENT), bsource.get(k, ABSENT))
+                  for k in set(akeys + bkeys)]
+
     def merge_rows(arow, brow):
         jrow = lazydict()
-        _arow = {f'{c}{amod}': arow.get(c) for c in acol}
-        _brow = {f'{c}{bmod}': brow.get(c) for c in bcol}
-        for k in set(list(_arow.keys()) + list(_brow.keys())):
-            _aval = _arow.get(k)
-            _bval = _brow.get(k)
-            jrow[k] = (_bval if _bval is not None else _aval) if bfirst else (_aval if _aval is not None else _bval)
+        for k, acolname, bcolname in merge_plan:
+            _aval = None if acolname is ABSENT else arow.get(acolname)
+            _bval = None if bcolname is ABSENT else brow.get(bcolname)
+            if bfirst:
+                jrow[k] = _bval if _bval is not None else _aval
+            else:
+                jrow[k] = _aval if _aval is not None else _bval
         return jrow
 
     joined = cls(columns=jcols)
