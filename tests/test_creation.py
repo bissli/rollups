@@ -1,5 +1,6 @@
 """Tests for DataSet creation and type conversion."""
 import datetime
+import functools
 import io
 import itertools
 import json
@@ -146,6 +147,36 @@ def test_row_callable_survives_type_conversion(declared):
 
     assert callable(ds.container[0]['total'])
     assert ds[0].total == 3
+
+
+@pytest.mark.parametrize('make', [
+    lambda: (lambda row: 1),
+    lambda: functools.partial(len, [1, 2]),
+    lambda: int,
+    lambda: 'x'.upper,
+    ], ids=['lambda', 'partial', 'type', 'bound-method'])
+def test_row_callable_guard_covers_every_callable_kind(make):
+    """Verify the conversion guard tests `callable`, not "is a function".
+
+    `lazydict` resolves anything `callable` returns true for, so the
+    guard has to cover the same set or conversion destroys a value the
+    row would still have resolved. A bare type is in that set: `int`
+    is callable, while the string `'x'` is not, so ordinary data never
+    reaches the branch.
+
+    Mutation: narrowing the guard to `isinstance(val, FunctionType)`,
+        which passes the lambda and stringifies the other three.
+    Oracle: identity of the object before and after conversion, in a
+        str column - the one declared type whose constructor would
+        otherwise accept it.
+    """
+    value = make()
+    ds = DataSet([{'v': value}])
+    ds.columns = [('v', str)]
+
+    ds.ensure_types()
+
+    assert ds.container[0]['v'] is value
 
 
 def test_row_callable_survives_a_validated_append():

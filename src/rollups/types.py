@@ -161,6 +161,11 @@ def _convert_value(val, typ):
       data, and `str` is the one target type that accepts anything, so
       without this guard that column alone would be destroyed while
       every other declared type left it alone.
+    - The test is `callable`, the same one `lazydict.__getattr__` uses
+      to decide what to resolve. Narrowing it to functions would let
+      conversion destroy a partial, a bound method, or any object with
+      `__call__` that the row would still have resolved. A str value
+      is not callable, so ordinary data never reaches this branch.
     """
     if val is None or typ is None or typ is None.__class__:
         return val
