@@ -171,3 +171,60 @@ def join_datasets(adataset: 'DataSet', akey: tuple[str],
                     break
 
     return joined
+
+
+def diff_datasets(ds1, ds2, keycols, comparecols):
+    """Compare two datasets and categorize rows by their differences.
+
+    Parameters
+    ----------
+    ds1 : DataSet
+        First dataset.
+    ds2 : DataSet
+        Second dataset.
+    keycols : list of str
+        Columns used to match rows between the datasets.
+    comparecols : list of str
+        Columns compared for differences.
+
+    Returns
+    -------
+    tuple of list
+        (same, diff, only_in_ds1, only_in_ds2), where:
+        same holds complete ds1 rows whose key is in both and whose
+        comparecols all match; diff holds rows with a matching key but
+        differing values, each carrying the key columns plus comparecols
+        where a differing column holds (ds1_value, ds2_value) and a
+        matching column holds None; only_in_ds1 and only_in_ds2 hold
+        complete rows whose key the other side lacks.
+
+    Notes
+    -----
+    - Keys are walked in sorted order.
+    - Where a key repeats within a dataset, the last row wins.
+    - A diff row carries only the key and comparison columns; same and
+      only rows keep every column from their source.
+    """
+    key_fn = lambda row: tuple(row[col] for col in keycols)
+    ds1_map = {key_fn(row): row for row in ds1}
+    ds2_map = {key_fn(row): row for row in ds2}
+
+    same, diff, only_in_ds1 = [], [], []
+    for key in sorted(ds1_map):
+        ds1_row = ds1_map[key]
+        ds2_row = ds2_map.pop(key, None)
+        if ds2_row is not None:
+            diff_row = attrdict(zip(keycols, key))
+            for col in comparecols:
+                if ds1_row[col] != ds2_row[col]:
+                    diff_row[col] = (ds1_row[col], ds2_row[col])
+                else:
+                    diff_row[col] = None
+            if any(diff_row[col] is not None for col in comparecols):
+                diff.append(diff_row)
+            else:
+                same.append(ds1_row)
+        else:
+            only_in_ds1.append(ds1_row)
+    only_in_ds2 = list(ds2_map.values())
+    return same, diff, only_in_ds1, only_in_ds2
