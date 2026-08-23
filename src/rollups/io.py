@@ -423,3 +423,26 @@ def excel_backend() -> ExcelBackend:
             'rollups.register_excel_backend(obj) with an object carrying '
             'parse and dataset_to_excel.')
     return _EXCEL_BACKEND
+
+
+def parse_excel_sheets(*args: Any, **kwargs: Any) -> dict[str, list[dict]]:
+    """Read a workbook into rows, keyed by sheet name.
+
+    Parameters
+    ----------
+    *args, **kwargs
+        Passed to the registered backend's `parse`. `read_only` is
+        forced on.
+
+    Returns
+    -------
+    dict
+        Sheet name to list of row dicts.
+
+    Raises
+    ------
+    RuntimeError
+        If no backend was registered.
+    """
+    kwargs.update({'read_only': True})
+    return excel_backend().parse(*args, **kwargs)
