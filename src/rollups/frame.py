@@ -16,8 +16,6 @@ Notes
 - See docs/dataframe-native.md for the contract differences against
   `DataSet.join` and `DataSet.bucket`.
 """
-
-
 import logging
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
@@ -27,14 +25,11 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-
 JOIN_TYPES = ('inner', 'outer', 'left', 'right', 'cross')
-
 
 # Stands in for a null while two key columns are matched, so that a None
 # on one side matches the NaN on the other.
 NULL_KEY = object()
-
 
 # Notes:
 # - Ops whose pandas form already answers NA on an all-null group, so
@@ -491,3 +486,52 @@ def empty_dataframe(columns: list[tuple[str, type]]) -> pd.DataFrame:
 
     data = {name: [_default(typ)] for name, typ in columns}
     return pd.DataFrame(data)
+
+
+def dataframe_from_list(
+    rows: list[tuple[Any, ...]],
+    cols: list[str],
+    typs: list[type],
+) -> pd.DataFrame:
+    """Create a pandas DataFrame from rows of tuples.
+
+    Parameters
+    ----------
+    rows : list of tuple
+        One tuple per record, in `cols` order.
+    cols : list of str
+        Column names.
+    typs : list of type
+        Column types, positionally matched to `cols`.
+
+    Returns
+    -------
+    pd.DataFrame
+        Frame of the supplied data, with int, float, str, and bool
+        columns coerced to the given type.
+
+    Notes
+    -----
+    - A None in a coerced column stays None rather than raising.
+    - Temporary migration helper; see docs/dataframe-native.md.
+    """
+    assert len(cols) == len(typs), 'cols and typs length mismatch'
+
+    # Build list-of-dicts representing rows
+    dict_rows = [dict(zip(cols, row)) for row in rows]
+    df = pd.DataFrame(dict_rows, columns=cols)
+
+    # Notes:
+    # - Test the gap with isna, not `is None`: building the frame above
+    #   already turned a None into NaN, so an `is None` guard never
+    #   fires and int(nan) raises.
+    def _coerce(val: Any, typ: type) -> Any:
+        if val is None or (isinstance(val, float) and np.isnan(val)):
+            return None
+        return typ(val)
+
+    for name, typ in zip(cols, typs):
+        if typ in {int, float, str, bool}:
+            df[name] = df[name].apply(_coerce, typ=typ)
+
+    return df
