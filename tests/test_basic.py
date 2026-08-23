@@ -1016,6 +1016,25 @@ def test_pp_shows_total_only_once_a_summary_exists():
     assert 'Total' in str(ds.pp)
 
 
+def test_pp_renders_a_column_less_dataset_that_declared_a_summary():
+    """Verify pp answers an empty table rather than raising.
+
+    A dataset that never had columns renders a zero-column table, and
+    adding a row to one makes prettytable take max() over an empty
+    sequence.
+
+    Mutation: dropping the `cols and` guard on the summary row, so pp
+        raises ValueError on a dataset with no columns.
+    Oracle: the string the pre-cache implementation returned for the
+        same input, which never rendered that row because an empty
+        summary dict is falsy.
+    """
+    ds = DataSet()
+    ds.add_summary_row()
+
+    assert ds.pp == '\n++\n||\n++\n++'
+
+
 # --- Constructor Tests ---
 
 def test_new_dataset_pagination_defaults():

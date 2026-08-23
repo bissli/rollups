@@ -1695,7 +1695,12 @@ class DataSet:
         cols = self.cols
         t = PrettyTable(cols)
         numrows = len(self.container)
-        summary_row = self.summary if getattr(self, '_summary_args', None) else None
+        # `cols and` is load-bearing: a dataset that never had columns
+        # renders a zero-column table, and adding a row to one makes
+        # prettytable take max() over an empty sequence.
+        summary_row = (self.summary
+                       if cols and getattr(self, '_summary_args', None)
+                       else None)
         for i, row in enumerate(self.container):
             divider = summary_row is not None and i == numrows - 1
             t.add_row([row[c] for c in cols], divider=divider)
