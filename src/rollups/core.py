@@ -6,6 +6,7 @@ from functools import wraps
 from typing import Self
 
 
+import libb
 from libb import lazydict as attrdict
 
 # Re-exported so a caller importing from this module keeps working, and
@@ -511,3 +512,77 @@ class DataSet:
         coltyp = self.columns[colix][1]
         new_colname = new_colname or colname
         self.add_column(new_colname, coltyp, values=colval)
+
+    def diff(self, colname: str, new_colname: str, index: int = 0) -> None:
+        """Difference a column's consecutive values into a new column.
+
+        Parameters
+        ----------
+        colname : str
+            Source column, which must be int or float.
+        new_colname : str
+            Name for the new difference column.
+        index : int, default 0
+            Where the differencing pivots: 0 differences forward
+            (current minus previous, first None), -1 differences
+            backward (current minus next, last None), and any other
+            index pivots at that row, which itself holds None.
+
+        Raises
+        ------
+        ValueError
+            If `index` falls outside the rows.
+        """
+        colix = self.cols.index(colname)
+        coltyp = self.columns[colix][1]
+        assert coltyp in {int, float}, 'only supports int and float types'
+
+        values = list(self.unwind(colname))
+
+        if not values:
+            self.add_column(new_colname, coltyp, values=[])
+            return
+
+        last_idx = len(values) - 1
+
+        if index < -1 or (index > last_idx and index != -1):
+            raise ValueError(f'index {index} out of range for dataset with {len(values)} rows')
+
+        diffs = []
+
+        if index == 0:
+            diffs.append(None)
+            diffs.extend(libb.safe_diff(values[i], values[i-1]) for i in range(1, len(values)))
+        elif index in {-1, last_idx}:
+            diffs.extend(libb.safe_diff(values[i], values[i+1]) for i in range(len(values) - 1))
+            diffs.append(None)
+        else:
+            for i in range(len(values)):
+                if i < index:
+                    diffs.append(libb.safe_diff(values[i], values[i+1]))
+                elif i == index:
+                    diffs.append(None)
+                else:
+                    diffs.append(libb.safe_diff(values[i], values[i-1]))
+        self.add_column(new_colname, coltyp, values=diffs)
+
+    def pct_change(self, colname, new_colname):
+        """Calculate percent change between consecutive values.
+
+        Parameters
+        ----------
+        colname : str
+            Source column, which must be int or float.
+        new_colname : str
+            Name for the new percent change column.
+
+        Notes
+        -----
+        - The first value is None, matching numpy.
+        - Forward direction only, one period.
+        """
+        colix = [i for i, x in enumerate(list(zip(*self.columns))[0]) if x == colname][0]
+        coltyp = self.columns[colix][1]
+        assert coltyp in {int, float}, 'only supports int and float types'
+        colval = list(self.unwind(colname))
+        self.add_column(new_colname, float, values=libb.pct_change(colval))
