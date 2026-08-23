@@ -876,3 +876,26 @@ class DataSet:
         """Check whether a row is a summary row rather than data.
         """
         return row.get('__is_summary__', False)
+
+    def add_summary_column(self, label, columns=None, row_func=sum) -> None:
+        """Add a column holding a per-row total across other columns.
+
+        Parameters
+        ----------
+        label : str
+            Name for the new column.
+        columns : list of str or None, default None
+            Columns to combine. None uses every column.
+        row_func : Callable, default sum
+            Applied to each row's values.
+
+        Notes
+        -----
+        - Falsy values are skipped, so a zero or None does not reach
+          `row_func`.
+        - The new column is typed float.
+        """
+        columns = columns or [_[0] for _ in self.columns]
+        for row in self:
+            row[label] = row_func(row[_] for _ in columns if row.get(_))
+        self.add_column(label, float)
