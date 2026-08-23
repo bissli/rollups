@@ -1185,3 +1185,33 @@ class DataSet:
                 row[name] = _convert_value(val, typ)
 
         self._types_converted = True
+
+    def to_array(self, columns=None, numpy_type=None):
+        """Convert selected columns to a numpy array.
+
+        Parameters
+        ----------
+        columns : list of str or None, default None
+            Columns to take, in order. None takes them all.
+        numpy_type : type or None, default None
+            dtype for the array. None uses the first column's type.
+
+        Returns
+        -------
+        np.ndarray
+            Two-dimensional array, one row per dataset row.
+        """
+        columns = columns or self.cols
+        numpy_type = numpy_type or self.colmap[columns[0]]
+        return np.array([[row[col] for col in columns] for row in self], dtype=numpy_type)
+
+    def to_list(self):
+        """Convert the DataSet to a grid of column tuples.
+
+        Returns
+        -------
+        list of tuple
+            One tuple per column, holding that column's values in row
+            order.
+        """
+        return list(zip(*[list(row.values()) for row in self.container]))
