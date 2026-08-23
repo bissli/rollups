@@ -6,12 +6,13 @@ import math
 import operator
 import random
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from functools import wraps
 from pydoc import locate
 from typing import Any, Self
 
 import numpy as np
+import pandas as pd
 from opendate import Date, DateTime, Time
 
 import libb
@@ -1421,6 +1422,41 @@ class DataSet:
             return self
         return result
 
+    def add_empty_row(self):
+        """Append a row holding None in every column.
+        """
+        empty = attrdict(dict.fromkeys(self.cols))
+        self.append(empty)
+        logger.debug('Added empty (null value) row')
+
+    @ensure_types_converted
+    def unwind(self, *args) -> Iterator[Any]:
+        """Unwind the dictionaries into arrays for timeseries analysis.
+
+        Parameters
+        ----------
+        *args : str
+            Columns to unwind, in order. Omit to take them all.
+
+        Returns
+        -------
+        Iterator
+            Values for a single column, or a tuple per row for several.
+
+        Notes
+        -----
+        - Pair with zip to split several columns into their own
+          sequences: `a, b = zip(*ds.unwind('a', 'b'))`.
+        """
+        cols = args or self.cols
+        if len(cols) > 1:
+            for row in self:
+                yield tuple(row[c] for c in cols)
+        else:
+            c = cols[0]
+            for row in self:
+                yield row[c]
+
     def flatten(self, kept, flattened, key='key', val='val') -> Self:
         """Reverse-pivot, moving each flattened column into its own row.
 
@@ -1454,6 +1490,46 @@ class DataSet:
             self.columns = grouped.columns
             return self
         return grouped
+
+    @ensure_types_converted
+    def dataframe(self, index: str, *cols: list[str], **opts) -> pd.DataFrame:
+        """Convert DataSet to a pandas DataFrame.
+
+        Parameters
+        ----------
+        index : str or None
+            Column to index by, typically a date. None leaves the default
+            integer index.
+        *cols : str
+            Columns to carry over. Omit to use every column.
+
+        Returns
+        -------
+        pd.DataFrame
+            Frame of the selected columns.
+
+        Raises
+        ------
+        ValueError
+            If `index` has duplicate keys, or if neither an index nor two
+            or more data columns were given.
+
+        Notes
+        -----
+        - Bucket first where the index repeats; the index must be unique.
+        - The index column may also appear among `cols`.
+        """
+        pd.set_option('display.expand_frame_repr', False)
+        cols = list(cols) or self.cols
+        cols = libb.unique(([index] if index else [])+cols)
+        if len(cols) == 1:
+            raise ValueError('Need to pass an index or multiple data columns')
+        if opts.get('sort_first', False):
+            self.sort_data(index)
+        df = pd.DataFrame.from_records(self.container, columns=cols)
+        if index:
+            df = df.set_index(index, verify_integrity=True)
+        return df
 
     def transpose(self, new_index_name, pivot_index=0):
         """Transpose so one column's values become the column names.
