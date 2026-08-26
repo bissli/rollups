@@ -4,7 +4,7 @@ import math
 
 import pytest
 from opendate import Date, DateTime, Time
-from rollups import DataSet
+from rollups import ConversionError, DataSet
 
 # --- Basic add_column Tests ---
 
@@ -352,15 +352,17 @@ def test_add_column_no_value_no_values():
     assert list(ds.unwind('c')) == [10, 20, None]
 
 
-def test_add_column_type_change_converts_convertible_only():
-    """Verify a type change converts what it can and keeps what it cannot.
+def test_add_column_type_change_raises_on_a_value_that_will_not_convert():
+    """Verify re-typing a column raises where a value does not convert.
 
-    Mutation: dropping `self._types_converted = False` at
-        core.py, so '42' never becomes 42; or `return result`
-        in place of `return result if result is not None else val` in
-        _convert_value, so the unparsable 'old' becomes None.
-    Oracle: hand-computed ['old', 42] - one value past int() and one
-        not - from the same str-to-int re-declaration.
+    The unconvertible value used to be handed back unchanged, so the
+    column declared int and held a str.
+
+    Mutation: dropping `self._types_converted = False` at core.py, so
+        nothing reconverts and nothing raises; or _convert_value
+        returning the value it could not convert.
+    Oracle: the ConversionError message, which has to name the column
+        and both types.
     """
     ds = DataSet([
         {'a': 1, 'b': 'old'},
@@ -370,8 +372,26 @@ def test_add_column_type_change_converts_convertible_only():
 
     ds.add_column('b', int)
 
-    assert ds[0]['b'] == 'old'
-    assert ds[1]['b'] == 42
+    with pytest.raises(ConversionError, match=r"column 'b' declared int.*'old'"):
+        _ = ds[0]
+
+
+def test_add_column_type_change_converts_what_it_can():
+    """Verify re-typing a column converts every value that does convert.
+
+    Mutation: dropping `self._types_converted = False` at core.py, so
+        '42' never becomes 42.
+    Oracle: hand-computed 42 and 7 from the str-to-int re-declaration.
+    """
+    ds = DataSet([
+        {'a': 1, 'b': '7'},
+        {'a': 2, 'b': '42'},
+    ])
+    ds.columns = [('a', int), ('b', str)]
+
+    ds.add_column('b', int)
+
+    assert [row['b'] for row in ds] == [7, 42]
 
 
 # --- Type Conversion and Cache Tests ---

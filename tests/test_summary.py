@@ -1,7 +1,7 @@
 import math
 
 import pytest
-from opendate import Date, DateTime
+from opendate import UTC, Date, DateTime
 from rollups import DataSet
 
 # --- Fixtures ---
@@ -382,14 +382,14 @@ def test_summary_row_datetime_column_with_cols_funcs():
     Oracle: hand-computed latest DateTime 2024-01-02 11:45 and 300.
     """
     ds = DataSet([
-        {'id': 1, 'dt': DateTime(2024, 1, 1, 10, 30), 'value': 100},
-        {'id': 2, 'dt': DateTime(2024, 1, 2, 11, 45), 'value': 200}])
+        {'id': 1, 'dt': DateTime(2024, 1, 1, 10, 30, tzinfo=UTC), 'value': 100},
+        {'id': 2, 'dt': DateTime(2024, 1, 2, 11, 45, tzinfo=UTC), 'value': 200}])
     ds.columns = (('id', int), ('dt', DateTime), ('value', int))
 
     ds.add_summary_row(cols_funcs=[('dt', max), ('value', sum)])
 
     assert ds.summary['id'] == 'Total'
-    assert ds.summary['dt'] == DateTime(2024, 1, 2, 11, 45)
+    assert ds.summary['dt'] == DateTime(2024, 1, 2, 11, 45, tzinfo=UTC)
     assert ds.summary['value'] == 300
 
 

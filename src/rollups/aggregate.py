@@ -237,18 +237,18 @@ def flatten_dataset(dataset: 'DataSet', kept, flattened,
     Notes
     -----
     - Flattening n columns over m rows gives n * m rows.
-    - The `val` column is typed float.
+    - The `val` column is typed `object`: it gathers columns of several
+      types into one, so no single type describes what it holds.
     """
     if not isinstance(kept, list | tuple):
         kept = [kept]
-    # flatten puts values of different types into one val column,
-    # which a later read would coerce to the column's float type,
-    # so turn type checking off on the result.
     ds = dataset.__class__(
-        columns=[(c, t) for c, t in dataset.columns if c in kept],
-        check_types=False)
+        columns=[(c, t) for c, t in dataset.columns if c in kept])
     ds.add_column(key, str)
-    ds.add_column(val, float)
+    # `object` is the honest declaration here: the flattened columns
+    # carry different types, so declaring float would either coerce
+    # every value to float or reject the ones that are not.
+    ds.add_column(val, object)
     if not kept:
         for row in dataset.container:
             for k in flattened:

@@ -16,10 +16,10 @@ Notes
 """
 from .aggregate import bucket_dataset, flatten_dataset, pivot_dataset
 from .aggregate import transpose_dataset
-from .core import DataSet, ensure_types_converted, find, force_type
-from .core import guess_dataframe_dataset_columns, infer_numeric_type
-from .core import is_dynamic_date_code, islistoftuples, log_excel_errors
-from .core import on_error_randomize, smart_type
+from .core import ConversionError, DataSet, ensure_types_converted, find
+from .core import force_type, guess_dataframe_dataset_columns
+from .core import infer_numeric_type, is_dynamic_date_code, islistoftuples
+from .core import log_excel_errors, on_error_randomize, smart_type
 from .frame import bucket_dataframe, dataframe_from_list, empty_dataframe
 from .frame import join_dataframes
 from .io import register_excel_backend
@@ -27,6 +27,7 @@ from .join import diff_datasets, join_datasets, match_rows, meld_datasets
 from .screen import apply_screen, get_or_val, interpret_screen, matches
 
 __all__ = [
+    'ConversionError',
     'DataSet',
     'apply_screen',
     'bucket_dataframe',

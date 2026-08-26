@@ -93,8 +93,7 @@ def test_json_writes_null_for_a_column_the_row_does_not_carry():
     Oracle: hand-written json text; the encoder refuses a bound method
         outright, so the wrong reader cannot even produce output.
     """
-    ds = DataSet([{'a': 1}], columns=[('a', int), ('items', str)],
-                 check_types=False)
+    ds = DataSet([{'a': 1}], columns=[('a', int), ('items', str)])
 
     assert ds.json(raw=True) == '[{"a": 1, "items": null}]'
 
@@ -244,7 +243,7 @@ def test_json_writes_a_time_column():
     Oracle: hand-written json text for both declared time types.
     """
     ds = DataSet([{'t': Time(10, 30)}], columns=[('t', Time)])
-    assert ds.json(raw=True) == '[{"t": "10:30:00"}]'
+    assert ds.json(raw=True) == '[{"t": "10:30:00+00:00"}]'
 
     ds = DataSet([{'t': datetime.time(10, 30)}], columns=[('t', datetime.time)])
     assert ds.json(raw=True) == '[{"t": "10:30:00+00:00"}]'

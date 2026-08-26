@@ -131,9 +131,10 @@ rows[0].x            # Money, built from the string
 ```
 
 Conversion tries the date and numeric types it knows, then falls through
-to `typ(val)`. A constructor that raises leaves the value untouched
-rather than failing the read, so a partly convertible column degrades
-instead of blowing up.
+to `typ(val)`. A constructor that raises makes the read raise
+`ConversionError`, naming the column, its declared type and the value -
+so a column that cannot hold what it declares says so rather than
+quietly keeping the wrong class.
 
 Inference works the same way round: `smart_type` answers
 `val.__class__` for anything it does not recognize, so a dataset built

@@ -27,7 +27,7 @@ import operator
 import pickle
 
 import pytest
-from opendate import Date, DateTime, Time
+from opendate import UTC, Date, DateTime, Time
 from rollups import DataSet
 
 from libb import attrdict
@@ -796,7 +796,8 @@ def test_bucket_complex_ratio_calculation():
 
 @pytest.mark.parametrize(('type_cls', 'values', 'expected_max'), [
     (Date, [Date(2024, 1, 1), Date(2024, 1, 3), Date(2024, 1, 2)], Date(2024, 1, 3)),
-    (Time, [Time(9, 30, 0), Time(14, 15, 0), Time(10, 0, 0)], Time(14, 15, 0)),
+    (Time, [Time(9, 30, 0, tzinfo=UTC), Time(14, 15, 0, tzinfo=UTC),
+            Time(10, 0, 0, tzinfo=UTC)], Time(14, 15, 0, tzinfo=UTC)),
     (bool, [True, False, False], True),
 ])
 def test_bucket_type_preservation(type_cls, values, expected_max):
@@ -891,11 +892,11 @@ def test_bucket_datetime_type_preservation():
         assert isinstance(row['timestamp'], DateTime)
 
     result_a = [r for r in result if r['category'] == 'A'][0]
-    assert result_a['timestamp'] == DateTime(2024, 1, 3, 0, 0, 0)
+    assert result_a['timestamp'] == DateTime(2024, 1, 3, 0, 0, 0, tzinfo=UTC)
     assert result_a['value'] == 450
 
     result_b = [r for r in result if r['category'] == 'B'][0]
-    assert result_b['timestamp'] == DateTime(2024, 1, 2, 0, 0, 0)
+    assert result_b['timestamp'] == DateTime(2024, 1, 2, 0, 0, 0, tzinfo=UTC)
     assert result_b['value'] == 125
 
 
@@ -1133,7 +1134,7 @@ def test_bucket_datetime_with_non_midnight_values():
 
     result.sort_data('category')
     assert isinstance(result[0].timestamp, DateTime)
-    assert result[0].timestamp == DateTime(2024, 1, 1, 14, 45, 0)
+    assert result[0].timestamp == DateTime(2024, 1, 1, 14, 45, 0, tzinfo=UTC)
     assert result[0].value == 300
 
 
@@ -1145,9 +1146,9 @@ def test_bucket_time_with_different_operations():
     Oracle: hand-picked 09:00 earliest and 10:30 latest for A.
     """
     ds = DataSet([
-        {'category': 'A', 'start_time': Time(9, 0, 0), 'duration': 60},
-        {'category': 'A', 'start_time': Time(10, 30, 0), 'duration': 45},
-        {'category': 'B', 'start_time': Time(14, 15, 0), 'duration': 90},
+        {'category': 'A', 'start_time': Time(9, 0, 0, tzinfo=UTC), 'duration': 60},
+        {'category': 'A', 'start_time': Time(10, 30, 0, tzinfo=UTC), 'duration': 45},
+        {'category': 'B', 'start_time': Time(14, 15, 0, tzinfo=UTC), 'duration': 90},
     ])
     ds.columns = [('category', str), ('start_time', Time), ('duration', int)]
 
@@ -1163,8 +1164,8 @@ def test_bucket_time_with_different_operations():
     result.sort_data('category')
     assert isinstance(result[0].earliest, Time)
     assert isinstance(result[0].latest, Time)
-    assert result[0].earliest == Time(9, 0, 0)
-    assert result[0].latest == Time(10, 30, 0)
+    assert result[0].earliest == Time(9, 0, 0, tzinfo=UTC)
+    assert result[0].latest == Time(10, 30, 0, tzinfo=UTC)
     assert result[0].duration == 105
 
 
@@ -1319,8 +1320,8 @@ def test_bucket_set_aggregation_with_subsequent_bucket():
     ('value', 123.45, float),
     ('value', True, bool),
     ('date_col', Date(2024, 1, 15), Date),
-    ('timestamp', DateTime(2024, 1, 15, 10, 30, 0), DateTime),
-    ('time_col', Time(14, 30, 0), Time),
+    ('timestamp', DateTime(2024, 1, 15, 10, 30, 0, tzinfo=UTC), DateTime),
+    ('time_col', Time(14, 30, 0, tzinfo=UTC), Time),
 ])
 def test_bucket_declared_type_survives_none_group(value_col, first_val, expected_type):
     """Verify a group aggregating to None keeps the guessed type.

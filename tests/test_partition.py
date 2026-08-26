@@ -1,7 +1,7 @@
 from collections import defaultdict
 
 import pytest
-from opendate import Date, DateTime
+from opendate import UTC, Date, DateTime
 from rollups import DataSet
 
 # --- Fixtures ---
@@ -356,18 +356,21 @@ def test_partition_with_datetime_keys():
     Oracle: two timestamps sharing 2024-01-15 kept apart, hand-computed.
     """
     ds = DataSet([
-        {'dt': DateTime(2024, 1, 15, 10, 30), 'value': 100},
-        {'dt': DateTime(2024, 1, 15, 10, 30), 'value': 200},
-        {'dt': DateTime(2024, 1, 15, 16, 0), 'value': 300},
-        {'dt': DateTime(2024, 6, 30, 14, 45), 'value': 400}])
+        {'dt': DateTime(2024, 1, 15, 10, 30, tzinfo=UTC), 'value': 100},
+        {'dt': DateTime(2024, 1, 15, 10, 30, tzinfo=UTC), 'value': 200},
+        {'dt': DateTime(2024, 1, 15, 16, 0, tzinfo=UTC), 'value': 300},
+        {'dt': DateTime(2024, 6, 30, 14, 45, tzinfo=UTC), 'value': 400}])
     ds.columns = (('dt', DateTime), ('value', int))
 
     by_dt = ds.partition(lambda x: x.dt)
 
     assert len(by_dt) == 3
-    assert [row.value for row in by_dt[DateTime(2024, 1, 15, 10, 30)]] == [100, 200]
-    assert [row.value for row in by_dt[DateTime(2024, 1, 15, 16, 0)]] == [300]
-    assert [row.value for row in by_dt[DateTime(2024, 6, 30, 14, 45)]] == [400]
+    first = by_dt[DateTime(2024, 1, 15, 10, 30, tzinfo=UTC)]
+    second = by_dt[DateTime(2024, 1, 15, 16, 0, tzinfo=UTC)]
+    third = by_dt[DateTime(2024, 6, 30, 14, 45, tzinfo=UTC)]
+    assert [row.value for row in first] == [100, 200]
+    assert [row.value for row in second] == [300]
+    assert [row.value for row in third] == [400]
 
 
 def test_partition_function_raises_exception():

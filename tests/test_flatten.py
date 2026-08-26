@@ -20,7 +20,7 @@ Example:
         | B        | profit | 40  |
 """
 import pytest
-from opendate import Date, DateTime, Time
+from opendate import UTC, Date, DateTime, Time
 from rollups import DataSet
 
 # --- Fixtures ---
@@ -225,7 +225,7 @@ def test_flatten_preserves_kept_column_types(typed_dataset):
     """
     result = typed_dataset.flatten(['date'], ['amount', 'count'])
 
-    assert result.columns == [('date', Date), ('key', str), ('val', float)]
+    assert result.columns == [('date', Date), ('key', str), ('val', object)]
     assert all(isinstance(r.date, Date) for r in result)
     assert [r.date for r in result] == [
         Date(2024, 1, 1),
@@ -252,18 +252,19 @@ def test_flatten_datetime_kept_column():
 
     assert result.colmap['timestamp'] == DateTime
     assert [(r.timestamp, r.key, r.val) for r in result] == [
-        (DateTime(2024, 1, 1, 10, 0), 'temp', 20.5),
-        (DateTime(2024, 1, 1, 10, 0), 'humidity', 60),
-        (DateTime(2024, 1, 1, 11, 0), 'temp', 21.0),
-        (DateTime(2024, 1, 1, 11, 0), 'humidity', 58),
+        (DateTime(2024, 1, 1, 10, 0, tzinfo=UTC), 'temp', 20.5),
+        (DateTime(2024, 1, 1, 10, 0, tzinfo=UTC), 'humidity', 60),
+        (DateTime(2024, 1, 1, 11, 0, tzinfo=UTC), 'temp', 21.0),
+        (DateTime(2024, 1, 1, 11, 0, tzinfo=UTC), 'humidity', 58),
         ]
 
 
 def test_flatten_numeric_values():
-    """Verify the generated key/val columns are typed str and float.
+    """Verify the generated key/val columns are typed str and object.
 
-    Mutation: declaring val as int (or key as the source column's type),
-        which a downstream numeric formatter would then truncate.
+    Mutation: declaring val as a concrete type such as float, which
+        either coerces every gathered cell or rejects the ones that are
+        not that type.
     Oracle: hand-computed schema plus the two source cells.
     """
     ds = DataSet([
@@ -273,7 +274,7 @@ def test_flatten_numeric_values():
 
     result = ds.flatten(['id'], ['int_val', 'float_val'])
 
-    assert result.columns == [('id', int), ('key', str), ('val', float)]
+    assert result.columns == [('id', int), ('key', str), ('val', object)]
     assert [(r.key, r.val) for r in result] == [('int_val', 10), ('float_val', 10.5)]
 
 
@@ -292,7 +293,7 @@ def test_flatten_string_kept_column():
 
     result = ds.flatten(['name'], ['math', 'science'])
 
-    assert result.columns == [('name', str), ('key', str), ('val', float)]
+    assert result.columns == [('name', str), ('key', str), ('val', object)]
     assert [(r.name, r.key, r.val) for r in result] == [
         ('A', 'math', 85),
         ('A', 'science', 90),
@@ -315,7 +316,7 @@ def test_flatten_empty_dataset():
     result = ds.flatten(['a'], ['b', 'c'])
 
     assert len(result) == 0
-    assert result.columns == [('a', int), ('key', str), ('val', float)]
+    assert result.columns == [('a', int), ('key', str), ('val', object)]
 
 
 def test_flatten_single_row():
@@ -451,8 +452,8 @@ def test_flatten_with_time_kept_column():
     Oracle: hand-computed (time, key, val) 4-row expansion.
     """
     ds = DataSet([
-        {'time': Time(10, 0, 0), 'metric_a': 100, 'metric_b': 200},
-        {'time': Time(11, 0, 0), 'metric_a': 150, 'metric_b': 250},
+        {'time': Time(10, 0, 0, tzinfo=UTC), 'metric_a': 100, 'metric_b': 200},
+        {'time': Time(11, 0, 0, tzinfo=UTC), 'metric_a': 150, 'metric_b': 250},
     ])
     ds.columns = [('time', Time), ('metric_a', int), ('metric_b', int)]
 
@@ -460,18 +461,18 @@ def test_flatten_with_time_kept_column():
 
     assert result.colmap['time'] == Time
     assert [(r.time, r.key, r.val) for r in result] == [
-        (Time(10, 0, 0), 'metric_a', 100),
-        (Time(10, 0, 0), 'metric_b', 200),
-        (Time(11, 0, 0), 'metric_a', 150),
-        (Time(11, 0, 0), 'metric_b', 250),
+        (Time(10, 0, 0, tzinfo=UTC), 'metric_a', 100),
+        (Time(10, 0, 0, tzinfo=UTC), 'metric_b', 200),
+        (Time(11, 0, 0, tzinfo=UTC), 'metric_a', 150),
+        (Time(11, 0, 0, tzinfo=UTC), 'metric_b', 250),
         ]
 
 
 def test_flatten_with_boolean_values():
     """Verify a bool cell reaches val unchanged, not coerced to 1.0/0.0.
 
-    Mutation: appending with validate=True, which runs the float column
-        type over the value and turns True into 1.0.
+    Mutation: declaring val float again and appending with
+        validate=True, which turns True into 1.0.
     Oracle: identity checks against the True/False singletons.
     """
     ds = DataSet([
@@ -591,10 +592,10 @@ def test_flatten_with_float_infinity():
 
 
 def test_flatten_with_mixed_type_values():
-    """Verify val holds each source cell as it was, despite its float type.
+    """Verify val holds each source cell as it was, whatever its type.
 
-    Mutation: coercing val to float on the way in, which rewrites the
-        int cell 100 as 100.0.
+    Mutation: declaring val float rather than object, which rewrites the
+        int cell 100 as 100.0 and rejects the str cell outright.
     Oracle: hand-computed cells plus a type check on the int and str.
     """
     ds = DataSet([

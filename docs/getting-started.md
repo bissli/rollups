@@ -99,9 +99,10 @@ edited in place.
 it directly to see what a set of rows infers to before committing to
 it.
 
-Pass `check_types=False` to switch conversion off for a dataset whose
-column types do not describe its values - which is what `flatten` does,
-because it puts values of several types into one column.
+Declare a column `object` where its type is unknown, or where the
+values under it are of several types - which is what `flatten` does for
+its `val` column. Every value is an instance of `object`, so such a
+column converts nothing and rejects nothing.
 
 ### What converts
 
@@ -122,8 +123,11 @@ class Money:
 DataSet([{'x': '1.50'}], columns=[('x', Money)])[0].x   # Money
 ```
 
-A constructor that raises leaves the value untouched rather than failing
-the read, so a partly convertible column degrades instead of failing.
+A constructor that raises makes the read raise `ConversionError`,
+naming the column, its declared type and the value. A declared type is a
+guarantee, not a claim: nothing silently keeps a value of the wrong
+class. Declare `object` where a column genuinely holds anything.
+
 Inference works the same way: a value of an unrecognized class infers as
 its own class.
 

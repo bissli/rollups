@@ -1,5 +1,5 @@
 import pytest
-from opendate import Date, DateTime, Time
+from opendate import UTC, Date, DateTime, Time
 from rollups import DataSet
 
 # --- Fixtures ---
@@ -401,25 +401,6 @@ class TestCommonCopyBehavior:
         assert result.summary['name'] == 'Sum'
         assert result.summary['value'] == 300
 
-    def test_preserves_check_types_flag(self, copy_method):
-        """Verify a copy honors check_types=False, while deepcopy converts.
-
-        Mutation: `_ensure_types_converted` losing its `_check_types`
-            guard, so a copy converts values it was told to leave.
-        Oracle: the '123' string still unconverted in a copy, against
-            the int 123 deepcopy forces.
-        """
-        ds = DataSet([
-            {'value': '123'}
-        ], columns=[('value', int)], check_types=False)
-        method = getattr(ds, copy_method)
-        result = method()
-        assert result._check_types is False
-        if copy_method == 'deepcopy':
-            assert result[0]['value'] == 123
-        else:
-            assert result[0]['value'] == '123'
-
     def test_with_none_values(self, copy_method):
         """Verify a None value neither converts nor stops its neighbors.
 
@@ -492,11 +473,11 @@ def test_empty_option_creates_empty_dataset(basic_dataset, copy_method):
 
 @pytest.mark.parametrize(('copy_method', 'date_type', 'test_value'), [
     ('copy', Date, Date(2024, 1, 1)),
-    ('copy', DateTime, DateTime(2024, 1, 1, 10, 30)),
+    ('copy', DateTime, DateTime(2024, 1, 1, 10, 30, tzinfo=UTC)),
     ('deepcopy', Date, Date(2024, 1, 1)),
-    ('deepcopy', DateTime, DateTime(2024, 1, 1, 10, 30)),
+    ('deepcopy', DateTime, DateTime(2024, 1, 1, 10, 30, tzinfo=UTC)),
     ('shallowcopy', Date, Date(2024, 1, 1)),
-    ('shallowcopy', DateTime, DateTime(2024, 1, 1, 10, 30)),
+    ('shallowcopy', DateTime, DateTime(2024, 1, 1, 10, 30, tzinfo=UTC)),
 ])
 def test_preserves_date_types(copy_method, date_type, test_value):
     """Verify a copy keeps a Date or DateTime column typed and valued.
@@ -537,7 +518,7 @@ class TestTypesConvertedFlag:
         assert result[0]['value'] == '123'
 
     def test_deepcopy_ensures_types_converted(self):
-        """Verify deepcopy converts first, check_types=False and all.
+        """Verify deepcopy converts before it copies.
 
         Mutation: dropping the conversion block at the top of
             deepcopy(), which would set the flag over unconverted
@@ -546,7 +527,7 @@ class TestTypesConvertedFlag:
         """
         ds = DataSet([
             {'value': '123'}
-        ], columns=[('value', int)], check_types=False)
+        ], columns=[('value', int)])
         assert ds._types_converted is False
         deep = ds.deepcopy()
         assert deep._types_converted is True
@@ -672,10 +653,10 @@ def test_copy_with_time_type():
 
     Mutation: `_copy_structure` dropping `ds.columns`, which loses the
         declared Time type and leaves the copy's colmap empty.
-    Oracle: the hand-written Time column type and Time(10, 30, 0).
+    Oracle: the hand-written Time column type and Time(10, 30, 0, tzinfo=UTC).
     """
     ds = DataSet([
-        {'time': Time(10, 30, 0), 'value': 100}
+        {'time': Time(10, 30, 0, tzinfo=UTC), 'value': 100}
     ])
     ds.columns = [('time', Time), ('value', int)]
 
@@ -683,7 +664,7 @@ def test_copy_with_time_type():
         method = getattr(ds, method_name)
         result = method()
         assert result.colmap['time'] == Time
-        assert result[0]['time'] == Time(10, 30, 0)
+        assert result[0]['time'] == Time(10, 30, 0, tzinfo=UTC)
 
 
 def test_copy_after_filter_operation():
@@ -819,7 +800,7 @@ def test_deepcopy_leaves_source_ready_for_a_deep_filter():
     """
     ds = DataSet([
         {'name': 'A', 'tags': ['x']}
-    ], columns=[('name', str), ('tags', list)], check_types=False)
+    ], columns=[('name', str), ('tags', list)])
     ds.deepcopy()
 
     kept = ds.filter_data(lambda row: row['name'] == 'A', inplace=False)

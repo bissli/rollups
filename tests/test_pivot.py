@@ -4,7 +4,7 @@ Pivot transforms data from long format to wide format by creating new columns
 based on unique values in a pivot column.
 """
 import pytest
-from opendate import Date, DateTime, Time
+from opendate import UTC, Date, DateTime, Time
 from rollups import DataSet
 
 # --- Fixtures ---
@@ -679,18 +679,18 @@ def test_pivot_with_time_in_pivot_column():
         09:00 and 200 at 14:00 for id 1.
     """
     ds = DataSet([
-        {'id': 1, 'value': 100, 'time': Time(9, 0, 0)},
-        {'id': 1, 'value': 200, 'time': Time(14, 0, 0)},
-        {'id': 2, 'value': 300, 'time': Time(9, 0, 0)}
+        {'id': 1, 'value': 100, 'time': Time(9, 0, 0, tzinfo=UTC)},
+        {'id': 1, 'value': 200, 'time': Time(14, 0, 0, tzinfo=UTC)},
+        {'id': 2, 'value': 300, 'time': Time(9, 0, 0, tzinfo=UTC)}
     ])
 
     result = ds.pivot('id', 'value', 'time')
 
     assert len(result) == 2
     result.sort_data('id')
-    assert result[0][Time(9, 0, 0)] == 100
-    assert result[0][Time(14, 0, 0)] == 200
-    assert result[1][Time(9, 0, 0)] == 300
+    assert result[0][Time(9, 0, 0, tzinfo=UTC)] == 100
+    assert result[0][Time(14, 0, 0, tzinfo=UTC)] == 200
+    assert result[1][Time(9, 0, 0, tzinfo=UTC)] == 300
 
 
 def test_pivot_with_datetime_in_pivot_column():
@@ -701,8 +701,8 @@ def test_pivot_with_datetime_in_pivot_column():
     Oracle: DateTime objects index the result row; hand-computed 100
         and 200 held apart on id 1.
     """
-    dt1 = DateTime(2024, 1, 1, 9, 0, 0)
-    dt2 = DateTime(2024, 1, 1, 14, 0, 0)
+    dt1 = DateTime(2024, 1, 1, 9, 0, 0, tzinfo=UTC)
+    dt2 = DateTime(2024, 1, 1, 14, 0, 0, tzinfo=UTC)
     ds = DataSet([
         {'id': 1, 'value': 100, 'timestamp': dt1},
         {'id': 1, 'value': 200, 'timestamp': dt2},

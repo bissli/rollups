@@ -2,7 +2,7 @@ import logging
 import re
 
 import pytest
-from opendate import Date, DateTime
+from opendate import UTC, Date, DateTime
 from rollups import DataSet
 
 # --- Fixtures ---
@@ -434,8 +434,9 @@ def test_filter_with_none_values_in_data():
      [Date(2024, 1, 15), Date(2024, 6, 15), Date(2024, 12, 31)],
      'month', 3),
     ('dt',
-     [DateTime(2024, 1, 15, 10, 30), DateTime(2024, 6, 15, 14, 45),
-      DateTime(2024, 12, 31, 23, 59)],
+     [DateTime(2024, 1, 15, 10, 30, tzinfo=UTC),
+      DateTime(2024, 6, 15, 14, 45, tzinfo=UTC),
+      DateTime(2024, 12, 31, 23, 59, tzinfo=UTC)],
      'hour', 13),
 ])
 def test_filter_temporal_values(col, values, attr, threshold):

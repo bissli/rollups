@@ -14,7 +14,7 @@ import logging
 import re
 from functools import lru_cache
 
-from opendate import Date, DateTime, Time
+from opendate import UTC, Date, DateTime, Time
 
 import libb
 
@@ -25,6 +25,28 @@ DATETIME_TYPES = frozenset({datetime.datetime, DateTime})
 TIME_TYPES = frozenset({datetime.time, Time})
 NUMERIC_TYPES = frozenset({int, float})
 TIME_VALUE_TYPES = (datetime.datetime, datetime.time)
+
+
+class ConversionError(ValueError):
+    """A value does not convert to its column's declared type.
+
+    Notes
+    -----
+    - Subclasses `ValueError`, so a caller already catching that keeps
+      catching this.
+    - Declaring a column `object` is how a caller says the type is
+      unknown: every value is an instance of `object`, so no value in
+      such a column can raise.
+    """
+
+
+def _conversion_error(val, typ, name) -> ConversionError:
+    """Build the error naming the column, the declared type and the value.
+    """
+    where = f'column {name!r}' if name else 'column'
+    return ConversionError(
+        f'{where} declared {typ.__name__}, but {val!r} is a '
+        f'{type(val).__name__} and does not convert')
 
 
 def infer_numeric_type(val: str) -> type | None:
@@ -149,13 +171,38 @@ def _cached_datetime_parse(dt_str: str):
     return DateTime.parse(dt_str)
 
 
-def _convert_value(val, typ):
+def _convert_value(val, typ, name=None):
     """Convert a single value to the target type.
+
+    Parameters
+    ----------
+    val : Any
+        Value to convert.
+    typ : type or None
+        Declared type of the column. None returns the value as it is.
+    name : str or None, default None
+        Column the value came from, named in the error message.
+
+    Returns
+    -------
+    Any
+        The value as `typ`.
+
+    Raises
+    ------
+    ConversionError
+        Where the value does not convert to the declared type.
 
     Notes
     -----
     - A None value, an undeclared type, and a callable are all returned
       as they are.
+    - Failure raises rather than handing back the value it could not
+      convert. A column that says `float` and holds `'abc'` is a
+      mismatch the caller has to know about; the old silent return left
+      the declared type a claim rather than a guarantee, and it failed
+      three different ways - a bad number kept its string, a bad date
+      became None, and everything else kept its value.
     - A row is a `libb.lazydict`, so a callable value is the row's own
       computed column, resolved on attribute access. Converting it
       would freeze `str(function)` - its repr and address - into the
@@ -175,37 +222,53 @@ def _convert_value(val, typ):
     if typ in DATETIME_TYPES:
         if isinstance(val, datetime.date):
             return DateTime.instance(val)
-        elif isinstance(val, str):
-            if is_dynamic_date_code(val):
-                return DateTime.parse(val)
-            return _cached_datetime_parse(val)
+        if isinstance(val, str):
+            parsed = (DateTime.parse(val) if is_dynamic_date_code(val)
+                      else _cached_datetime_parse(val))
+            if parsed is None:
+                raise _conversion_error(val, typ, name)
+            # A dynamic code resolves to a naive value where an ISO
+            # string parses to UTC. Widen, or one column holds both and
+            # a plain `<` between two of its rows raises TypeError.
+            # `.instance` cannot do it: handed a value already of the
+            # target class it answers it unchanged, timezone and all.
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     if typ in DATE_TYPES:
         if isinstance(val, datetime.date):
             return Date.instance(val)
-        elif isinstance(val, str):
-            if is_dynamic_date_code(val):
-                return Date.parse(val)
-            return _cached_date_parse(val)
+        if isinstance(val, str):
+            parsed = (Date.parse(val) if is_dynamic_date_code(val)
+                      else _cached_date_parse(val))
+            if parsed is None:
+                raise _conversion_error(val, typ, name)
+            return parsed
     if typ in TIME_TYPES:
         if isinstance(val, TIME_VALUE_TYPES):
             return Time.instance(val)
         if isinstance(val, str):
-            return Time.parse(val)
+            parsed = Time.parse(val)
+            if parsed is None:
+                raise _conversion_error(val, typ, name)
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
         # Normalize here rather than leaving the generic call below to
         # answer a plain datetime.time. Conversion has to be a fixed
         # point: a row converts on append and again on the next full
         # pass, and a value that changes class between the two drifts.
         try:
             return Time.instance(typ(val))
-        except Exception:
-            return val
+        except Exception as exc:
+            raise _conversion_error(val, typ, name) from exc
+    if typ in NUMERIC_TYPES:
+        # numify answers None for a value it will not take, so failure
+        # arrives as a return rather than as an exception.
+        result = libb.numify(val, typ)
+        if result is None:
+            raise _conversion_error(val, typ, name)
+        return result
     try:
-        if typ in NUMERIC_TYPES:
-            result = libb.numify(val, typ)
-            return result if result is not None else val
         return typ(val)
-    except Exception:
-        return val
+    except Exception as exc:
+        raise _conversion_error(val, typ, name) from exc
 
 
 def force_type(somestr, date_fmt='%d%b%y'):

@@ -838,13 +838,17 @@ def test_creation_type_inference_with_none():
 def test_creation_with_exemplar_parameter():
     """Verify `exemplar` picks the row that inference starts from.
 
+    Row 0 holds numeric STRINGS, which infer as str but still convert to
+    the int and float row 1 declares - so the test separates which row
+    was read from whether the values happen to fit.
+
     Mutation: guess_columns starting its scan at row 0 regardless of
         `exemplar`, typing both columns str.
     Oracle: hand-typed row 1 (int, float) against row 0's strings.
     """
     ds = DataSet(
         [
-            {'a': 'wrong', 'b': 'types'},
+            {'a': '7', 'b': '1.5'},
             {'a': 123, 'b': 45.6}
         ],
         exemplar=1
@@ -852,6 +856,7 @@ def test_creation_with_exemplar_parameter():
 
     assert ds.colmap == {'a': int, 'b': float}
     assert ds[1]['a'] == 123
+    assert ds[0]['a'] == 7
 
 
 # --- type conversion ---
@@ -894,24 +899,6 @@ def test_creation_type_conversion_preserves_none():
 
     assert ds[1]['a'] is None
     assert ds[1]['b'] is None
-
-
-def test_creation_with_check_types_false():
-    """Verify check_types=False leaves the values as handed in.
-
-    Mutation: _ensure_types_converted dropping its self._check_types
-        term, converting on first read anyway.
-    Oracle: the raw strings handed to the constructor.
-    """
-    ds = DataSet(
-        [{'a': '123', 'b': '45.6'}],
-        columns=[('a', int), ('b', float)],
-        check_types=False
-    )
-
-    assert ds[0]['a'] == '123'
-    assert ds[0]['b'] == '45.6'
-    assert isinstance(ds[0]['a'], str)
 
 
 def test_creation_handles_date_string_conversion():
@@ -980,31 +967,6 @@ def test_types_converted_flag_triggers(trigger_method):
 
     assert ds._types_converted is True
     assert ds.container[0]['a'] == 123
-
-
-def test_types_converted_with_check_types_false():
-    """Verify check_types=False defers conversion to an explicit call.
-
-    Mutation: _ensure_types_converted ignoring _check_types, or
-        convert_container_types not setting the flag.
-    Oracle: the raw string before the call, hand-converted 123 after.
-    """
-    ds = DataSet(
-        [{'a': '123', 'b': '45.6'}],
-        columns=[('a', int), ('b', float)],
-        check_types=False
-    )
-
-    assert ds._types_converted is False
-    _ = ds[0]
-    assert ds._types_converted is False
-    assert ds[0]['a'] == '123'
-
-    ds.convert_container_types()
-
-    assert ds._types_converted is True
-    assert ds[0]['a'] == 123
-    assert isinstance(ds[0]['a'], int)
 
 
 # --- missing and sparse columns ---

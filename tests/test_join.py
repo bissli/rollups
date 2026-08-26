@@ -23,7 +23,7 @@ Notes
 import logging
 
 import pytest
-from opendate import Date, DateTime, Time
+from opendate import UTC, Date, DateTime, Time
 from rollups import DataSet, match_rows
 
 # --- Helpers ---
@@ -761,7 +761,7 @@ def test_join_type_deduplication_complex_types():
     ds_b = DataSet([{
         'id': 1,
         'date_col': Date(2024, 1, 1),
-        'time_col': Time(10, 30, 0),
+        'time_col': Time(10, 30, 0, tzinfo=UTC),
     }])
     ds_b.columns = [('id', int), ('date_col', Date), ('time_col', Time)]
 
@@ -770,7 +770,7 @@ def test_join_type_deduplication_complex_types():
     assert result.colmap['date_col'] == Date
     assert result.colmap['time_col'] == Time
     assert result[0].date_col == Date(2024, 1, 1)
-    assert result[0].time_col == Time(10, 30, 0)
+    assert result[0].time_col == Time(10, 30, 0, tzinfo=UTC)
 
 
 # --- Edge Case Tests ---

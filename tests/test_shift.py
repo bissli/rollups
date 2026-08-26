@@ -2,7 +2,7 @@ import logging
 import math
 
 import pytest
-from opendate import Date, DateTime, Time
+from opendate import UTC, Date, DateTime, Time
 from rollups import DataSet
 
 # --- Fixtures ---
@@ -249,15 +249,17 @@ def test_shift_datetime_column():
         one row down, times of day included.
     """
     ds = DataSet([
-        {'dt': DateTime(2024, 1, 1, 10, 30)},
-        {'dt': DateTime(2024, 1, 2, 11, 45)},
-        {'dt': DateTime(2024, 1, 3, 14, 15)},
+        {'dt': DateTime(2024, 1, 1, 10, 30, tzinfo=UTC)},
+        {'dt': DateTime(2024, 1, 2, 11, 45, tzinfo=UTC)},
+        {'dt': DateTime(2024, 1, 3, 14, 15, tzinfo=UTC)},
     ])
     ds.columns = [('dt', DateTime)]
     ds.shift('dt', 1, 'dt_shifted')
     assert ds.colmap['dt_shifted'] == DateTime
     assert list(ds.unwind('dt_shifted')) == [
-        None, DateTime(2024, 1, 1, 10, 30), DateTime(2024, 1, 2, 11, 45)]
+        None,
+        DateTime(2024, 1, 1, 10, 30, tzinfo=UTC),
+        DateTime(2024, 1, 2, 11, 45, tzinfo=UTC)]
 
 
 # --- None Value Handling Tests ---
@@ -308,15 +310,15 @@ def test_shift_time_type():
         down.
     """
     ds = DataSet([
-        {'time': Time(10, 30, 0)},
-        {'time': Time(11, 45, 0)},
-        {'time': Time(14, 15, 0)},
+        {'time': Time(10, 30, 0, tzinfo=UTC)},
+        {'time': Time(11, 45, 0, tzinfo=UTC)},
+        {'time': Time(14, 15, 0, tzinfo=UTC)},
     ])
     ds.columns = [('time', Time)]
     ds.shift('time', 1, 'time_shifted')
     assert ds.colmap['time_shifted'] == Time
     assert list(ds.unwind('time_shifted')) == [
-        None, Time(10, 30, 0), Time(11, 45, 0)]
+        None, Time(10, 30, 0, tzinfo=UTC), Time(11, 45, 0, tzinfo=UTC)]
 
 
 def test_shift_with_infinity_values():

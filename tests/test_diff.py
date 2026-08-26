@@ -73,7 +73,7 @@ Common Use Cases
 import math
 
 import pytest
-from opendate import Date, DateTime, Time
+from opendate import UTC, Date, DateTime, Time
 from rollups import DataSet, diff_datasets
 
 # --- Fixtures ---
@@ -1305,22 +1305,22 @@ def test_diff_datasets_with_datetime_key():
         only in ds2.
     """
     ds1 = DataSet([
-        {'dt': DateTime(2024, 1, 1, 10, 0), 'value': 100},
-        {'dt': DateTime(2024, 1, 2, 10, 0), 'value': 200},
+        {'dt': DateTime(2024, 1, 1, 10, 0, tzinfo=UTC), 'value': 100},
+        {'dt': DateTime(2024, 1, 2, 10, 0, tzinfo=UTC), 'value': 200},
     ])
     ds2 = DataSet([
-        {'dt': DateTime(2024, 1, 1, 10, 0), 'value': 150},
-        {'dt': DateTime(2024, 1, 3, 10, 0), 'value': 300},
+        {'dt': DateTime(2024, 1, 1, 10, 0, tzinfo=UTC), 'value': 150},
+        {'dt': DateTime(2024, 1, 3, 10, 0, tzinfo=UTC), 'value': 300},
     ])
 
     same, diff, only_in_ds1, only_in_ds2 = diff_datasets(ds1, ds2, ['dt'], ['value'])
 
     assert len(same) == 0
     assert len(diff) == 1
-    assert diff[0]['dt'] == DateTime(2024, 1, 1, 10, 0)
+    assert diff[0]['dt'] == DateTime(2024, 1, 1, 10, 0, tzinfo=UTC)
     assert diff[0]['value'] == (100, 150)
-    assert only_in_ds1[0]['dt'] == DateTime(2024, 1, 2, 10, 0)
-    assert only_in_ds2[0]['dt'] == DateTime(2024, 1, 3, 10, 0)
+    assert only_in_ds1[0]['dt'] == DateTime(2024, 1, 2, 10, 0, tzinfo=UTC)
+    assert only_in_ds2[0]['dt'] == DateTime(2024, 1, 3, 10, 0, tzinfo=UTC)
 
 
 def test_diff_datasets_with_date_key():
@@ -1357,22 +1357,22 @@ def test_diff_datasets_with_time_key():
         only in ds2.
     """
     ds1 = DataSet([
-        {'time': Time(10, 0, 0), 'value': 100},
-        {'time': Time(11, 0, 0), 'value': 200},
+        {'time': Time(10, 0, 0, tzinfo=UTC), 'value': 100},
+        {'time': Time(11, 0, 0, tzinfo=UTC), 'value': 200},
     ])
     ds2 = DataSet([
-        {'time': Time(10, 0, 0), 'value': 150},
-        {'time': Time(12, 0, 0), 'value': 300},
+        {'time': Time(10, 0, 0, tzinfo=UTC), 'value': 150},
+        {'time': Time(12, 0, 0, tzinfo=UTC), 'value': 300},
     ])
 
     same, diff, only_in_ds1, only_in_ds2 = diff_datasets(ds1, ds2, ['time'], ['value'])
 
     assert len(same) == 0
     assert len(diff) == 1
-    assert diff[0]['time'] == Time(10, 0, 0)
+    assert diff[0]['time'] == Time(10, 0, 0, tzinfo=UTC)
     assert diff[0]['value'] == (100, 150)
-    assert only_in_ds1[0]['time'] == Time(11, 0, 0)
-    assert only_in_ds2[0]['time'] == Time(12, 0, 0)
+    assert only_in_ds1[0]['time'] == Time(11, 0, 0, tzinfo=UTC)
+    assert only_in_ds2[0]['time'] == Time(12, 0, 0, tzinfo=UTC)
 
 
 def test_diff_datasets_with_boolean_values():

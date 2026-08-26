@@ -11,7 +11,7 @@ import random
 
 import pytest
 from opendate import Date, DateTime, Time
-from rollups import DataSet, force_type, infer_numeric_type
+from rollups import ConversionError, DataSet, force_type, infer_numeric_type
 from rollups import is_dynamic_date_code, islistoftuples, smart_type
 from rollups.types import _cached_date_parse, _cached_datetime_parse
 
@@ -660,21 +660,37 @@ class TestExtendValidation:
         assert all(isinstance(val, Time) for val in values)
         assert [(val.hour, val.minute) for val in values] == [(9, 30), (14, 45)]
 
-    def test_extend_validate_with_mixed_valid_invalid(self):
-        """A value that will not convert is kept, not blanked or raised.
+    def test_extend_validate_raises_on_a_value_that_will_not_convert(self):
+        """A value that will not convert raises, naming the column.
 
-        Mutation: `return result if result is not None else val` reduced
-            to `return result`, wiping the unconvertible value to None.
-        Oracle: hand-computed; 'invalid' survives between two conversions.
+        It used to be handed back unchanged, so an int column held the
+        string 'invalid' between two converted ints.
+
+        Mutation: _convert_value answering the value it could not
+            convert, or numify's None reaching the caller as a value.
+        Oracle: the ConversionError message, naming column and type.
         """
         ds = DataSet([], columns=[('a', int)])
-        ds.extend([
-            {'a': '100'},
-            {'a': 'invalid'},
-            {'a': '300'},
-        ], validate=True)
 
-        assert [row['a'] for row in ds.container] == [100, 'invalid', 300]
+        with pytest.raises(ConversionError,
+                           match=r"column 'a' declared int.*'invalid'"):
+            ds.extend([
+                {'a': '100'},
+                {'a': 'invalid'},
+                {'a': '300'},
+            ], validate=True)
+
+    def test_extend_validate_converts_every_convertible_value(self):
+        """Every value that does convert is converted on the way in.
+
+        Mutation: extend storing the row unconverted while still taking
+            the validate branch.
+        Oracle: hand-computed [100, 300] from the two numeric strings.
+        """
+        ds = DataSet([], columns=[('a', int)])
+        ds.extend([{'a': '100'}, {'a': '300'}], validate=True)
+
+        assert [row['a'] for row in ds.container] == [100, 300]
 
     def test_extend_validate_empty_sequence(self):
         """An empty validated extend adds nothing and converts nothing.
@@ -736,25 +752,6 @@ class TestExtendValidation:
 ])
 class TestCommonValidationBehavior:
     """Tests for behavior common to both append and extend validation."""
-
-    def test_check_types_false_ignores_validate(self, method_name, data):
-        """check_types=False blocks conversion on write and on read.
-
-        Mutation: _ensure_types_converted dropping its `_check_types`
-            term, so the first read converts anyway.
-        Oracle: the raw strings, still raw after a read.
-        """
-        ds = DataSet([], columns=[('a', int), ('b', float)], check_types=False)
-        method = getattr(ds, method_name)
-        method(data, validate=True)
-
-        assert ds.container[0]['a'] == '123'
-        assert ds.container[0]['b'] == '45.6'
-
-        _ = ds[0]
-
-        assert ds.container[0]['a'] == '123'
-        assert ds.container[0]['b'] == '45.6'
 
 
 # --- TestIntegrationTypeEnforcement - Integration tests ---
@@ -1120,18 +1117,21 @@ def test_validate_with_nested_dict_values():
 
 
 def test_validate_with_list_values():
-    """A list column keeps its items, and a value it cannot take survives.
+    """A list column keeps its items, and rejects a value list() refuses.
 
-    Mutation: dropping _convert_value's suppress, so list(42) raises
-        instead of leaving the value alone.
-    Oracle: the hand-written list, and the 42 that list() cannot take.
+    Mutation: _convert_value swallowing the TypeError from list(42) and
+        answering 42, which leaves a list column holding an int.
+    Oracle: the hand-written list on the way in, and the
+        ConversionError naming the column for the 42 that list() cannot
+        take.
     """
     ds = DataSet([], columns=[('items', list)])
     ds.append({'items': [1, 2, 3]}, validate=True)
-    ds.append({'items': 42}, validate=True)
 
     assert ds.container[0]['items'] == [1, 2, 3]
-    assert ds.container[1]['items'] == 42
+
+    with pytest.raises(ConversionError, match=r"column 'items' declared list"):
+        ds.append({'items': 42}, validate=True)
 
 
 def test_guess_columns_with_empty_string_values():
@@ -1600,10 +1600,175 @@ def test_declaring_a_column_no_row_carries_rearms_conversion():
     ds = DataSet([{'g': 'a', 'v': 1}, {'g': 'b', 'v': 2}])
     assert [row['v'] for row in ds] == [1, 2]
 
-    ds.columns = ds.columns + [('extra', int)]
+    # `columns` hands out the live list, so `+=` would mutate it in
+    # place and the setter would then see the new name already among the
+    # known ones - defeating the very re-arm this test pins.
+    ds.columns = ds.columns + [('extra', int)]  # noqa: PLR6104
 
     assert ds[0]['extra'] is None
     assert ds.partition(lambda row: row['g'])['a'][0]['extra'] is None
+
+
+# --- conversion failure is loud ---
+
+
+@pytest.mark.parametrize(('typ', 'value'), [
+    (int, 'abc'),
+    (float, 'abc'),
+    (Date, 'not a date'),
+    (DateTime, 'not a datetime'),
+    (Time, 'not a time'),
+    (Time, 12345),
+    (list, 42),
+])
+def test_a_value_that_will_not_convert_raises(typ, value):
+    """Verify every conversion path raises rather than swallowing.
+
+    The four paths failed four different ways and all of them quietly: a
+    bad number kept its string (numify answers None), a bad date became
+    None (parse answers None), the numeric-time branch had its own
+    except, and the generic typ(val) had the last one.
+
+    Mutation: any of the four restored to returning the value, or the
+        raise narrowed to one branch - the numeric-time row (Time,
+        12345) is the branch the rest of the suite never reaches.
+    Oracle: the ConversionError itself, per (type, value) pair chosen so
+        the declared type provably cannot take the value.
+    """
+    ds = DataSet([], columns=[('c', typ)])
+
+    with pytest.raises(ConversionError, match=r"column 'c' declared"):
+        ds.append({'c': value}, validate=True)
+
+
+def test_a_column_declared_object_never_raises():
+    """Verify `object` is the honest declaration for an unknown column.
+
+    It is what replaced check_types=False: every value is an instance of
+    object, so such a column converts nothing and rejects nothing.
+
+    Mutation: _convert_value calling object(val) on the way through,
+        which answers a bare object() and destroys the value.
+    Oracle: the hand-written values themselves, one of each awkward
+        kind.
+    """
+    held = ['abc', 42, None, [1, 2], {'k': 'v'}]
+    ds = DataSet([{'c': v} for v in held], columns=[('c', object)])
+    ds.ensure_types()
+
+    assert [row['c'] for row in ds.container] == held
+
+
+def test_the_conversion_error_names_the_column_and_both_types():
+    """Verify the message carries what a caller needs to find the row.
+
+    Mutation: dropping the column name from _convert_value's call sites,
+        which leaves a caller with a hundred float columns and no clue
+        which one failed.
+    Oracle: the four facts read straight out of the message text.
+    """
+    ds = DataSet([], columns=[('amount', float)])
+
+    with pytest.raises(ConversionError) as excinfo:
+        ds.append({'amount': 'abc'}, validate=True)
+
+    message = str(excinfo.value)
+    assert "column 'amount'" in message
+    assert 'declared float' in message
+    assert "'abc'" in message
+    assert 'str' in message
+
+
+def test_conversion_error_is_a_value_error():
+    """Verify a caller already catching ValueError keeps catching this.
+
+    Mutation: ConversionError subclassing Exception, which walks past
+        every existing `except ValueError` at a call site.
+    Oracle: the subclass relation itself.
+    """
+    assert issubclass(ConversionError, ValueError)
+
+
+# --- one column, one timezone ---
+
+
+def test_every_path_into_a_datetime_column_agrees_on_utc():
+    """Verify a DateTime column carries UTC whatever fed it.
+
+    The paths disagreed: a naive value handed straight in was skipped by
+    the conversion pass, and a dynamic code parsed naive, while an ISO
+    string and a widened stdlib datetime both parsed to UTC. Comparing
+    an aware value with a naive one raises, so a column fed from two of
+    those sources failed on a plain `<`.
+
+    Mutation: dropping either half of the fix - the widening in
+        _convert_value's parse branches, or _convert_row's naive test
+        for a value that already matches its type. Either one alone
+        leaves the column mixed.
+    Oracle: every pair compared, which has to raise for no pair.
+    """
+    fed_by = [
+        DateTime(2024, 1, 15, 10, 30),
+        DateTime.instance(datetime.datetime(2024, 1, 15, 10, 30)),
+        datetime.datetime(2024, 1, 15, 10, 30),
+        datetime.date(2024, 1, 15),
+        '2024-01-15T10:30:00',
+        'P',
+        'N',
+        ]
+    held = []
+    for value in fed_by:
+        ds = DataSet([{'c': value}], columns=[('c', DateTime)])
+        ds.ensure_types()
+        held.append(ds[0]['c'])
+
+    assert all(v.tzinfo is not None for v in held), [str(v) for v in held]
+    for left in held:
+        for right in held:
+            assert isinstance(left < right, bool)
+
+
+def test_every_path_into_a_time_column_agrees_on_utc():
+    """Verify a Time column carries UTC whatever fed it.
+
+    Mutation: dropping the widening from the Time branch of
+        _convert_value, or the naive test from _convert_row.
+    Oracle: every pair compared, which has to raise for no pair.
+    """
+    held = []
+    for value in [Time(10, 30), datetime.time(10, 30), '10:30:00']:
+        ds = DataSet([{'c': value}], columns=[('c', Time)])
+        ds.ensure_types()
+        held.append(ds[0]['c'])
+
+    assert all(v.tzinfo is not None for v in held), [str(v) for v in held]
+    for left in held:
+        for right in held:
+            assert isinstance(left < right, bool)
+
+
+def test_a_date_column_carries_no_timezone():
+    """Verify the widening stops at the two types that have a timezone.
+
+    The value is handed in already a Date, which is what reaches the
+    widening branch: a plain datetime.date converts on the branch above
+    it and never gets there.
+
+    Mutation: marking DATE_TYPES aware in the conversion plan, which
+        reads .tzinfo off a Date - it has none, so every date column
+        raises AttributeError on its first read.
+    Oracle: the tzinfo attribute a Date does not carry, checked on the
+        value that takes the widening path.
+    """
+    ds = DataSet([{'c': Date(2024, 1, 15)}], columns=[('c', Date)])
+    ds.ensure_types()
+
+    assert not hasattr(ds[0]['c'], 'tzinfo')
+
+    plain = DataSet([{'c': datetime.date(2024, 1, 15)}], columns=[('c', Date)])
+    plain.ensure_types()
+
+    assert not hasattr(plain[0]['c'], 'tzinfo')
 
 
 if __name__ == '__main__':

@@ -13,7 +13,7 @@ from typing import Any, Self
 
 import numpy as np
 import pandas as pd
-from opendate import Date, DateTime, Time
+from opendate import UTC, Date, DateTime, Time
 from prettytable import PrettyTable
 
 import libb
@@ -25,6 +25,7 @@ from . import aggregate, io, join
 # import it sees as unused, and these have no local caller.
 from .io import log_excel_errors  # noqa: F401
 from .io import on_error_randomize  # noqa: F401
+from .types import ConversionError  # noqa: F401
 from .types import _cached_date_parse  # noqa: F401
 from .types import _cached_datetime_parse  # noqa: F401
 from .types import _convert_value  # noqa: F401
@@ -112,7 +113,6 @@ class DataSet:
         per_page: int | None = None,
         total: int | None = None,
         exemplar: int | None = 0,
-        check_types: bool = True,
         infer_numeric_strings: bool = False,
     ) -> Self:
         """DataSet constructor from an iterable of dicts or another DataSet.
@@ -136,8 +136,6 @@ class DataSet:
         exemplar : int or None, default 0
             Row index that supplies the column names and starts type
             inference.
-        check_types : bool, default True
-            If True, validate and convert types on first access.
         infer_numeric_strings : bool, default False
             If True, a numeric string yields int or float rather than str.
 
@@ -146,6 +144,9 @@ class DataSet:
         - Set `cols` and `typs` yourself, or let them come from
           item[exemplar].
         - Type conversion is lazy: it runs on the first read, not here.
+        - Declare a column `object` where its type is unknown. Every
+          value is an instance of `object`, so such a column converts
+          nothing and rejects nothing.
 
         """
         if columns is None:
@@ -166,8 +167,6 @@ class DataSet:
                                            infer_numeric_strings=infer_numeric_strings)
             self._summary_args = ()
             self._types_converted = False
-
-        self._check_types = check_types
 
         self.page = page
         self.per_page = per_page
@@ -195,11 +194,11 @@ class DataSet:
             If True, convert types now. If False, conversion waits for
             the first read, which is faster but defers any error.
         """
-        if validate and self.columns and self._check_types:
+        if validate and self.columns:
             converted = lazydict()
             for name, typ in self.columns:
                 val = obj.get(name)
-                converted[name] = _convert_value(val, typ)
+                converted[name] = _convert_value(val, typ, name)
             self.container.append(converted)
         else:
             self.container.append(obj)
@@ -207,7 +206,7 @@ class DataSet:
             # the whole container: re-arming makes an append-then-read
             # loop quadratic. Where the pass is already armed there is
             # nothing to do, since it will reach this row too.
-            if self._types_converted and self._check_types:
+            if self._types_converted:
                 self._convert_row(obj, self._conversion_plan())
             else:
                 self._types_converted = False
@@ -245,18 +244,18 @@ class DataSet:
             If True, convert types now. If False, conversion waits for
             the first read, which is faster but defers any error.
         """
-        if validate and self.columns and self._check_types:
+        if validate and self.columns:
             for obj in sequence:
                 converted = lazydict()
                 for name, typ in self.columns:
                     val = obj.get(name)
-                    converted[name] = _convert_value(val, typ)
+                    converted[name] = _convert_value(val, typ, name)
                 self.container.append(converted)
         else:
             self.container.extend(sequence)
             # See the note in append(): converting the new rows beats
             # re-arming a pass over every row already converted.
-            if self._types_converted and self._check_types:
+            if self._types_converted:
                 cols_to_convert = self._conversion_plan()
                 for obj in sequence:
                     self._convert_row(obj, cols_to_convert)
@@ -365,10 +364,8 @@ class DataSet:
         - Idempotent, and cheap to call again: it reads one flag and
           returns. A function outside this class that reads rows should
           call it first rather than assume a caller did.
-        - Does nothing where the dataset was built with
-          `check_types=False`.
         """
-        if not self._types_converted and self._check_types:
+        if not self._types_converted:
             self.convert_container_types()
             self._types_converted = True
 
@@ -384,7 +381,6 @@ class DataSet:
         ds = self.__class__()
         ds.columns = list(self.columns) if self.columns else self.columns
         ds._summary_args = self._summary_args
-        ds._check_types = getattr(self, '_check_types', True)
         ds.page = self.page
         ds.per_page = self.per_page
         ds.total = self.total
@@ -552,16 +548,12 @@ class DataSet:
         - Only the sampled rows are copied. Deep copying the container
           first and sampling from the copy costs the full row count
           however few rows are asked for.
-        - Converts every row, not only the sampled ones, and does so
-          whatever `check_types` says. That is `deepcopy`'s guard, kept
-          here deliberately: `ensure_types()` would skip a
-          `check_types=False` dataset, and the deep copy of the sampled
-          rows would then convert those rows alone - in place, since
-          they are the rows this dataset holds - leaving one column
-          holding two types.
+        - Converts every row, not only the sampled ones. The deep copy
+          of the sampled rows would otherwise convert those rows alone
+          - in place, since they are the rows this dataset holds -
+          leaving one column holding two types.
         """
-        if not self._types_converted:
-            self.convert_container_types()
+        self.ensure_types()
         chosen = self.copy(empty=True)
         chosen.container = random.sample(self.container,
                                          min(max(n, 0), len(self.container)))
@@ -1287,11 +1279,15 @@ class DataSet:
         Notes
         -----
         - A column the row is missing is added, holding None.
+        - A column the row is missing is added, holding None.
         - A None value is left alone, and so is a value already of the
           declared type.
         - A date, datetime or time column also normalizes a value of the
           plain stdlib class to the opendate class, which is why the
           declared type alone does not settle whether to convert.
+        - A datetime or time column carries UTC-aware values, so a naive
+          one is widened even where it already matches the declared
+          type.
         """
         names, plain, temporal = plan
         for name in names:
@@ -1300,15 +1296,22 @@ class DataSet:
         for name, typ in plain:
             val = row[name]
             if val is not None and not isinstance(val, typ):
-                row[name] = _convert_value(val, typ)
-        for name, typ, target, source in temporal:
+                row[name] = _convert_value(val, typ, name)
+        for name, typ, target, source, aware in temporal:
             val = row[name]
             if val is None:
                 continue
             if isinstance(val, source) and not isinstance(val, target):
                 row[name] = target.instance(val)
             elif not isinstance(val, typ):
-                row[name] = _convert_value(val, typ)
+                row[name] = _convert_value(val, typ, name)
+            elif aware and val.tzinfo is None:
+                # A value that already matches its type is otherwise
+                # skipped, so a naive one handed straight in would be
+                # the only value in the column without a timezone.
+                # `.instance` is no use here - it answers a value of
+                # the target class unchanged - so attach UTC directly.
+                row[name] = val.replace(tzinfo=UTC)
 
     def _conversion_plan(self) -> tuple:
         """What one conversion pass has to do, worked out once.
@@ -1318,9 +1321,10 @@ class DataSet:
         tuple
             (names, plain, temporal). `names` is every declared column.
             `plain` holds the (name, type) pairs converted by type
-            alone. `temporal` holds (name, type, target, source) for the
-            date family, where a value that is an instance of `source`
-            is normalized to `target` rather than converted.
+            alone. `temporal` holds (name, type, target, source, aware)
+            for the date family, where a value that is an instance of
+            `source` is normalized to `target` rather than converted,
+            and `aware` marks the columns whose values carry a timezone.
 
         Notes
         -----
@@ -1344,11 +1348,11 @@ class DataSet:
             if typ is None or typ is None.__class__:
                 continue
             if typ in DATE_TYPES:
-                temporal.append((name, typ, Date, datetime.date))
+                temporal.append((name, typ, Date, datetime.date, False))
             elif typ in DATETIME_TYPES:
-                temporal.append((name, typ, DateTime, datetime.datetime))
+                temporal.append((name, typ, DateTime, datetime.datetime, True))
             elif typ in TIME_TYPES:
-                temporal.append((name, typ, Time, TIME_VALUE_TYPES))
+                temporal.append((name, typ, Time, TIME_VALUE_TYPES, True))
             else:
                 plain.append((name, typ))
         plan = (names, plain, temporal)

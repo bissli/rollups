@@ -33,7 +33,7 @@ Key Differences from join()
 import math
 
 import pytest
-from opendate import Date, DateTime, Time
+from opendate import UTC, Date, DateTime, Time
 from rollups import DataSet, meld_datasets
 
 # --- Fixtures ---
@@ -625,8 +625,9 @@ def test_meld_various_row_counts(num_rows):
 
 @pytest.mark.parametrize(('col', 'typ', 'val1', 'val2'), [
     ('date', Date, Date(2024, 1, 1), Date(2024, 6, 15)),
-    ('dt', DateTime, DateTime(2024, 1, 1, 10, 30), DateTime(2024, 6, 15, 14, 45)),
-    ('time', Time, Time(10, 30, 0), Time(14, 45, 0)),
+    ('dt', DateTime, DateTime(2024, 1, 1, 10, 30, tzinfo=UTC),
+     DateTime(2024, 6, 15, 14, 45, tzinfo=UTC)),
+    ('time', Time, Time(10, 30, 0, tzinfo=UTC), Time(14, 45, 0, tzinfo=UTC)),
 ])
 def test_meld_with_temporal_types(col, typ, val1, val2):
     """Verify a temporal column crosses with its declared type intact.
