@@ -1693,7 +1693,10 @@ class DataSet:
             self.sort_data(index)
         df = pd.DataFrame.from_records(self.container, columns=cols)
         if index:
-            df = df.set_index(index, verify_integrity=True)
+            df = df.set_index(index)
+            if not df.index.is_unique:
+                duplicates = df.index[df.index.duplicated()].unique()
+                raise ValueError(f'Index has duplicate keys: {duplicates}')
         return df
 
     def transpose(self, new_index_name, pivot_index=0):

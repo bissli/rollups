@@ -804,8 +804,8 @@ def test_to_list():
 def test_dataframe_conversion():
     """Verify dataframe picks columns, guards the index, and needs two.
 
-    Mutation: dropping verify_integrity so a repeating index passes, or
-        dropping the one-column guard.
+    Mutation: dropping the is_unique check so a repeating index passes,
+        or dropping the one-column guard.
     Oracle: hand-computed pivot column sums 33.0 and 25.1.
     """
     xx = DataSet([
