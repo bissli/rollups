@@ -356,11 +356,13 @@ def test_add_column_type_change_raises_on_a_value_that_will_not_convert():
     """Verify re-typing a column raises where a value does not convert.
 
     The unconvertible value used to be handed back unchanged, so the
-    column declared int and held a str.
+    column declared int and held a str. It now raises at the
+    add_column line rather than at whatever reads the dataset next.
 
-    Mutation: dropping `self._types_converted = False` at core.py, so
-        nothing reconverts and nothing raises; or _convert_value
-        returning the value it could not convert.
+    Mutation: add_column writing its values raw, which defers the
+        failure to a later reader - or loses it entirely, since the
+        method converts on the way in and so leaves the container
+        marked converted.
     Oracle: the ConversionError message, which has to name the column
         and both types.
     """
@@ -370,10 +372,8 @@ def test_add_column_type_change_raises_on_a_value_that_will_not_convert():
     ])
     ds.columns = [('a', int), ('b', str)]
 
-    ds.add_column('b', int)
-
     with pytest.raises(ConversionError, match=r"column 'b' declared int.*'old'"):
-        _ = ds[0]
+        ds.add_column('b', int)
 
 
 def test_add_column_type_change_converts_what_it_can():
@@ -456,9 +456,6 @@ def test_add_column_callable_with_date_business_method():
     ])
     ds.columns = [('id', int), ('as_of_date', Date)]
 
-    assert isinstance(ds.container[0]['as_of_date'], datetime.date)
-    assert not isinstance(ds.container[0]['as_of_date'], Date)
-
     ds.add_column('prev_date', Date,
                   value=lambda x: x.as_of_date.business().subtract(days=1))
 
@@ -468,13 +465,19 @@ def test_add_column_callable_with_date_business_method():
     assert ds[1]['prev_date'] == Date(2024, 3, 14)
 
 
-def test_add_column_type_change_invalidates_cache():
-    """Verify changing a column's type clears the converted flag.
+def test_add_column_type_change_reconverts_the_column():
+    """Verify re-declaring a column's type converts its existing values.
 
-    Mutation: dropping the `old_type != typ` arm at core.py,
-        which leaves the flag True and the strings unparsed.
-    Oracle: the flag read either side of the call, plus Date(2024, 1,
-        15) proving the later read really re-converted.
+    Values convert as they enter, so a re-declaration is the one thing
+    that leaves a converted container holding the wrong type. Conversion
+    validates against a snapshot of the declared columns rather than a
+    flag cleared on write, so it catches this whichever writer made the
+    change.
+
+    Mutation: ensure_types trusting `_types_converted` alone, which
+        leaves the strings unparsed under the new Date type.
+    Oracle: hand-computed Date(2024, 1, 15) from the string the column
+        held under its old str type.
     """
     ds = DataSet([
         {'a': 1, 'date_str': '2024-01-15'},
@@ -482,14 +485,13 @@ def test_add_column_type_change_invalidates_cache():
     ])
     ds.columns = [('a', int), ('date_str', str)]
 
-    _ = ds[0]
-    assert ds._types_converted is True
+    assert ds[0]['date_str'] == '2024-01-15'
 
     ds.add_column('date_str', Date)
-    assert ds._types_converted is False
 
     assert isinstance(ds[0]['date_str'], Date)
     assert ds[0]['date_str'] == Date(2024, 1, 15)
+    assert ds[1]['date_str'] == Date(2024, 2, 20)
 
 
 def test_add_column_same_type_preserves_cache():
@@ -758,8 +760,10 @@ def test_rename_column_onto_existing_drops_stale_target_values():
     Mutation: skipping the pre-emptive remove_column(rename) at
         core.py, which leaves the old target value in any
         row the rename loop does not touch.
-    Oracle: hand-derived rows [{'label': 1}, {}] - row two has no
-        'code' key, so nothing may be written under 'label' there.
+    Oracle: hand-derived rows - row two never had a 'code' value, so
+        nothing may be written under 'label' there. It carries the key
+        holding None, because append fills every declared column a row
+        lacks.
     """
     ds = DataSet([{'code': 1, 'label': 'x'}])
     ds.columns = [('code', int), ('label', str)]
@@ -767,7 +771,7 @@ def test_rename_column_onto_existing_drops_stale_target_values():
 
     ds.rename_column('code', 'label')
 
-    assert ds.container == [{'label': 1}, {}]
+    assert ds.container == [{'label': 1}, {'label': None}]
 
 
 def test_rename_column_same_name_warns_naming_the_column(caplog):

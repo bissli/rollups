@@ -47,9 +47,9 @@ or name it.
 
 ### Reading rows in a subclass method
 
-A method that reads row values calls `self.ensure_types()` first.
-Conversion is lazy - a value is still the string it was read from until
-something triggers it:
+A method that reads row values calls `self.ensure_types()` first. It is
+a no-op for data that entered through the constructor, `append` or
+`extend`, and it is what picks up a column re-declared since:
 
 ```python
 class Report(DataSet):
@@ -63,8 +63,9 @@ Reading through `self` rather than `self.container` converts as a side
 effect, but relying on that makes a later switch to `self.container`
 silently change the answer. Call it.
 
-`ensure_types` is idempotent and reads one flag on the second call, so
-calling it in every method costs nothing.
+`ensure_types` is idempotent and compares the declared columns against
+the ones the last pass ran on, so calling it in every method costs
+nothing.
 
 ## Calling the free functions
 

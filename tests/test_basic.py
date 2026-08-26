@@ -146,7 +146,7 @@ def test_append(basic_dataset):
     assert len(basic_dataset) == 6
     assert basic_dataset[-1]['name'] == 'F'
 
-    basic_dataset.append({'id': 7, 'name': 'G', 'value': '700'}, validate=True)
+    basic_dataset.append({'id': 7, 'name': 'G', 'value': '700'})
     assert basic_dataset[-1]['value'] == 700
     assert isinstance(basic_dataset[-1]['value'], int)
 

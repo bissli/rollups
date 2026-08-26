@@ -15,6 +15,8 @@ from rollups import ConversionError, DataSet, force_type, infer_numeric_type
 from rollups import is_dynamic_date_code, islistoftuples, smart_type
 from rollups.types import _cached_date_parse, _cached_datetime_parse
 
+from libb import lazydict
+
 # --- Fixtures ---
 
 
@@ -331,19 +333,17 @@ class TestGuessColumnsScanning:
 class TestAppendValidation:
     """Tests for append() with validation parameter."""
 
-    def test_append_validate_false_default(self):
-        """append() defers conversion until the first read.
+    def test_append_converts_on_entry(self):
+        """append() converts the row as it lands, not on the first read.
 
-        Mutation: append ignoring `validate` and always converting.
-        Oracle: the raw strings before the read, the numbers after.
+        Mutation: append storing the row unconverted and leaving it to a
+            later pass, which is the deferral this replaced.
+        Oracle: the container read DIRECTLY, which no conversion
+            decorator sits in front of - through ds[0] a deferred
+            implementation would look identical.
         """
         ds = DataSet([], columns=[('a', int), ('b', float)])
         ds.append({'a': '123', 'b': '45.6'})
-
-        assert ds.container[0]['a'] == '123'
-        assert ds.container[0]['b'] == '45.6'
-
-        _ = ds[0]
 
         assert ds.container[0]['a'] == 123
         assert ds.container[0]['b'] == 45.6
@@ -356,7 +356,7 @@ class TestAppendValidation:
         Oracle: hand-computed 45.6, which int conversion truncates to 45.
         """
         ds = DataSet([], columns=[('a', int), ('b', float)])
-        ds.append({'a': '123', 'b': '45.6'}, validate=True)
+        ds.append({'a': '123', 'b': '45.6'})
 
         assert ds.container[0]['a'] == 123
         assert ds.container[0]['b'] == 45.6
@@ -376,7 +376,7 @@ class TestAppendValidation:
         Oracle: the components read off the input string by hand.
         """
         ds = DataSet([], columns=[('val', col_type)])
-        ds.append({'val': string_value}, validate=True)
+        ds.append({'val': string_value})
 
         val = ds.container[0]['val']
         parts = (val.year, val.month, val.day,
@@ -393,7 +393,7 @@ class TestAppendValidation:
         Oracle: None in, None out, for an int and a str column alike.
         """
         ds = DataSet([], columns=[('a', int), ('b', str)])
-        ds.append({'a': None, 'b': None}, validate=True)
+        ds.append({'a': None, 'b': None})
 
         assert ds.container[0]['a'] is None
         assert ds.container[0]['b'] is None
@@ -406,7 +406,7 @@ class TestAppendValidation:
         Oracle: both keys survive, still holding their strings.
         """
         ds = DataSet([])
-        ds.append({'a': '123', 'b': '45.6'}, validate=True)
+        ds.append({'a': '123', 'b': '45.6'})
 
         assert set(ds.container[0]) == {'a', 'b'}
         assert ds.container[0]['a'] == '123'
@@ -420,7 +420,7 @@ class TestAppendValidation:
         Oracle: hand-read 14:30:00 on an opendate Time.
         """
         ds = DataSet([], columns=[('time', Time)])
-        ds.append({'time': datetime.time(14, 30, 0)}, validate=True)
+        ds.append({'time': datetime.time(14, 30, 0)})
 
         val = ds.container[0]['time']
 
@@ -448,43 +448,39 @@ class TestAppendValidation:
         assert [row['a'] for row in ds.container] == [1, 7, 8]
         assert ds._types_converted is True
 
-    def test_lazy_add_to_an_unconverted_dataset_defers_as_before(self):
-        """A dataset not yet converted stays armed, converting on read.
+    def test_append_converts_without_a_read_ever_happening(self):
+        """A row appended to a never-read dataset is still converted.
 
-        Mutation: append converting eagerly whatever the flag says,
-            which would drop the deferral `validate=False` promises.
-        Oracle: the raw string in the container before any read, and
-            the int after one.
+        Mutation: append converting only where the dataset was already
+            converted, so a fresh dataset defers instead.
+        Oracle: both rows read from the container directly, with no read
+            of the dataset in between.
         """
         ds = DataSet([{'a': '1'}], columns=[('a', int)])
 
         ds.append({'a': '7'})
 
-        assert ds.container[-1]['a'] == '7'
-        assert ds._types_converted is False
-        assert ds[-1]['a'] == 7
+        assert [row['a'] for row in ds.container] == [1, 7]
 
-    def test_append_validate_false_stores_the_caller_row(self):
-        """The lazy path stores the caller's dict; validation copies it.
+    def test_append_converts_in_place_and_keeps_undeclared_keys(self):
+        """append() converts the caller's own row rather than rebuilding it.
 
-        Mutation: the validate branch converting in place and appending
-            the caller's own dict.
-        Oracle: object identity, plus the caller's dict still holding the
-            raw string after a validated append.
+        The old validated path rebuilt the row from self.columns, which
+        silently dropped every key the columns did not name.
+
+        Mutation: rebuilding the row from self.columns again, which
+            drops 'extra' and hands back a different object.
+        Oracle: the undeclared key, and identity against the lazydict
+            the caller passed in.
         """
-        lazy_row = {'a': '1'}
-        ds_lazy = DataSet([], columns=[('a', int)])
-        ds_lazy.append(lazy_row, validate=False)
+        row = lazydict({'a': '1', 'extra': 'x'})
+        ds = DataSet([], columns=[('a', int)])
 
-        assert ds_lazy.container[0] is lazy_row
+        ds.append(row)
 
-        validated_row = {'a': '1'}
-        ds_validated = DataSet([], columns=[('a', int)])
-        ds_validated.append(validated_row, validate=True)
-
-        assert ds_validated.container[0] is not validated_row
-        assert validated_row['a'] == '1'
-        assert ds_validated.container[0]['a'] == 1
+        assert ds.container[0] is row
+        assert ds.container[0]['extra'] == 'x'
+        assert ds.container[0]['a'] == 1
 
     def test_append_validate_with_missing_columns(self):
         """A column the row omits is filled with None.
@@ -494,7 +490,7 @@ class TestAppendValidation:
         Oracle: hand-computed; only 'a' is supplied.
         """
         ds = DataSet([], columns=[('a', int), ('b', str), ('c', float)])
-        ds.append({'a': '123'}, validate=True)
+        ds.append({'a': '123'})
 
         assert ds.container[0]['a'] == 123
         assert ds.container[0]['b'] is None
@@ -506,22 +502,19 @@ class TestAppendValidation:
 class TestExtendValidation:
     """Tests for extend() with validation parameter."""
 
-    def test_extend_validate_false_default(self):
-        """extend() defers conversion until the first read.
+    def test_extend_converts_on_entry(self):
+        """extend() converts every row as it lands, not on the first read.
 
-        Mutation: extend ignoring `validate` and always converting.
-        Oracle: the raw strings before the read, the numbers after.
+        Mutation: extend storing the rows unconverted, which is the
+            deferral this replaced.
+        Oracle: the container read directly, no read of the dataset
+            in between.
         """
         ds = DataSet([], columns=[('a', int), ('b', float)])
         ds.extend([
             {'a': '100', 'b': '10.5'},
             {'a': '200', 'b': '20.5'},
         ])
-
-        assert ds.container[0]['a'] == '100'
-        assert ds.container[1]['b'] == '20.5'
-
-        _ = ds[0]
 
         assert ds.container[0]['a'] == 100
         assert ds.container[1]['b'] == 20.5
@@ -537,7 +530,7 @@ class TestExtendValidation:
             {'a': '100', 'b': '10.5'},
             {'a': '200', 'b': '20.5'},
             {'a': '300', 'b': '30.5'},
-        ], validate=True)
+        ])
 
         assert [row['a'] for row in ds.container] == [100, 200, 300]
         assert all(isinstance(row['a'], int) for row in ds.container)
@@ -559,7 +552,7 @@ class TestExtendValidation:
         """
         ds = DataSet([], columns=[('when', typ), ('value', int)])
         ds.extend([{'when': text, 'value': str(i)}
-                   for i, text in enumerate(strings)], validate=True)
+                   for i, text in enumerate(strings)])
 
         values = [row['when'] for row in ds.container]
         parts = [(val.year, val.month, val.day,
@@ -581,7 +574,7 @@ class TestExtendValidation:
         ds.extend([
             {'a': None, 'b': 'text'},
             {'a': '100', 'b': None},
-        ], validate=True)
+        ])
 
         assert ds.container[0]['a'] is None
         assert ds.container[0]['b'] == 'text'
@@ -599,7 +592,7 @@ class TestExtendValidation:
         ds.extend([
             {'a': '100'},
             {'a': '200'},
-        ], validate=True)
+        ])
 
         assert [set(row) for row in ds.container] == [{'a'}, {'a'}]
         assert [row['a'] for row in ds.container] == ['100', '200']
@@ -612,18 +605,24 @@ class TestExtendValidation:
         """
         ds = DataSet([], columns=[('id', int), ('value', float)])
         rows = [{'id': str(i), 'value': str(i * 1.5)} for i in range(100)]
-        ds.extend(rows, validate=True)
+        ds.extend(rows)
 
         assert [row['id'] for row in ds.container] == list(range(100))
         assert [row['value'] for row in ds.container] == [i * 1.5 for i in range(100)]
         assert all(isinstance(row['value'], float) for row in ds.container)
 
-    def test_extend_validate_from_another_dataset(self):
-        """Validated rows are copies, so the source dataset is untouched.
+    def test_extend_shares_the_rows_it_is_handed(self):
+        """extend() takes the caller's row objects rather than copying.
 
-        Mutation: the validate branch converting the row in place and
-            appending the caller's own dict.
-        Oracle: the source row still holds 1 after the copy is set to 99.
+        This is what `append` and the constructor have always done. The
+        old validated path copied, but only as a side effect of
+        rebuilding each row - and that rebuild is what dropped
+        undeclared keys. Deep-copy before extending to keep the two
+        datasets independent.
+
+        Mutation: extend rebuilding each row, which makes the two
+            datasets independent and silently drops undeclared keys.
+        Oracle: the 99 written through the target, read from the source.
         """
         source = DataSet([
             {'a': 1, 'b': 2.5},
@@ -632,15 +631,14 @@ class TestExtendValidation:
         source.columns = [('a', int), ('b', float)]
 
         target = DataSet([], columns=[('a', int), ('b', float)])
-        target.extend(source.container, validate=True)
+        target.extend(source.container)
 
         assert len(target) == 2
-        assert target.container[0] is not source.container[0]
+        assert target.container[0] is source.container[0]
 
         target.container[0]['a'] = 99
 
-        assert source.container[0]['a'] == 1
-        assert target.container[1]['b'] == 4.5
+        assert source.container[0]['a'] == 99
 
     def test_extend_validate_with_time_type(self):
         """Each datetime.time is converted to the Time column type.
@@ -653,7 +651,7 @@ class TestExtendValidation:
         ds.extend([
             {'time': datetime.time(9, 30, 0)},
             {'time': datetime.time(14, 45, 0)},
-        ], validate=True)
+        ])
 
         values = [row['time'] for row in ds.container]
 
@@ -678,7 +676,7 @@ class TestExtendValidation:
                 {'a': '100'},
                 {'a': 'invalid'},
                 {'a': '300'},
-            ], validate=True)
+            ])
 
     def test_extend_validate_converts_every_convertible_value(self):
         """Every value that does convert is converted on the way in.
@@ -688,24 +686,24 @@ class TestExtendValidation:
         Oracle: hand-computed [100, 300] from the two numeric strings.
         """
         ds = DataSet([], columns=[('a', int)])
-        ds.extend([{'a': '100'}, {'a': '300'}], validate=True)
+        ds.extend([{'a': '100'}, {'a': '300'}])
 
         assert [row['a'] for row in ds.container] == [100, 300]
 
-    def test_extend_validate_empty_sequence(self):
-        """An empty validated extend adds nothing and converts nothing.
+    def test_extend_empty_sequence(self):
+        """An empty extend adds nothing and disturbs nothing.
 
-        Mutation: extend marking `_types_converted` True because it ran
-            the validate branch.
-        Oracle: the row stored earlier still converts on the first read.
+        Mutation: extend running its conversion loop over the whole
+            container rather than the rows it was handed, or raising on
+            an empty sequence.
+        Oracle: the row count and the value the constructor converted.
         """
         ds = DataSet([{'a': '1'}], columns=[('a', int)])
 
-        ds.extend([], validate=True)
+        ds.extend([])
 
         assert len(ds) == 1
-        assert ds._types_converted is False
-        assert ds[0]['a'] == 1
+        assert ds.container[0]['a'] == 1
 
     def test_extend_validate_with_missing_columns(self):
         """Every declared column appears in every row, None where absent.
@@ -719,7 +717,7 @@ class TestExtendValidation:
             {'a': '100'},
             {'b': 'text'},
             {'c': '3.14'},
-        ], validate=True)
+        ])
 
         assert ds.container[0]['a'] == 100
         assert ds.container[0]['b'] is None
@@ -737,7 +735,7 @@ class TestExtendValidation:
         ds = DataSet([{'a': 1, 'b': 2.5}], columns=[('a', int), ('b', float)])
         _ = ds[0]
 
-        ds.extend([{'a': '100', 'b': '20.5'}], validate=True)
+        ds.extend([{'a': '100', 'b': '20.5'}])
 
         assert len(ds) == 2
         assert ds.container[0]['a'] == 1
@@ -782,46 +780,31 @@ class TestIntegrationTypeEnforcement:
         """
         ds = DataSet([], columns=[('a', int), ('b', float)])
 
-        ds.append({'a': '10', 'b': '1.5'}, validate=True)
+        ds.append({'a': '10', 'b': '1.5'})
         ds.extend([
             {'a': '20', 'b': '2.5'},
             {'a': '30', 'b': '3.5'},
-        ], validate=True)
+        ])
 
         assert [row['a'] for row in ds.container] == [10, 20, 30]
         assert [row['b'] for row in ds.container] == [1.5, 2.5, 3.5]
 
-    def test_mixed_lazy_and_validated_appends(self):
-        """The first read converts every lazily appended row, not just one.
+    def test_every_row_converts_whatever_the_order_of_calls(self):
+        """Interleaved appends and extends all land converted.
 
-        Mutation: _ensure_types_converted converting only the row asked
-            for rather than the whole container.
-        Oracle: rows 0 and 2, raw until a read of row 0 converts both.
+        Mutation: either entry point keeping a per-call switch, so one
+            call's rows land raw between two that converted.
+        Oracle: the container read directly, every value an int.
         """
         ds = DataSet([], columns=[('a', int)])
 
-        ds.append({'a': '100'}, validate=False)
-        ds.append({'a': '200'}, validate=True)
-        ds.append({'a': '300'}, validate=False)
+        ds.append({'a': '1'})
+        ds.extend([{'a': '2'}, {'a': '3'}])
+        ds.append({'a': '4'})
+        ds.extend([{'a': '5'}])
 
-        assert [row['a'] for row in ds.container] == ['100', 200, '300']
-
-        _ = ds[0]
-
-        assert [row['a'] for row in ds.container] == [100, 200, 300]
-
-    def test_validated_append_after_lazy_extend(self):
-        """A validated append converts its own row only.
-
-        Mutation: append(validate=True) converting the whole container.
-        Oracle: the two lazily added strings, still strings.
-        """
-        ds = DataSet([], columns=[('a', int)])
-
-        ds.extend([{'a': '100'}, {'a': '200'}], validate=False)
-        ds.append({'a': '300'}, validate=True)
-
-        assert [row['a'] for row in ds.container] == ['100', '200', 300]
+        assert [row['a'] for row in ds.container] == [1, 2, 3, 4, 5]
+        assert all(isinstance(row['a'], int) for row in ds.container)
 
     def test_dataset_creation_scans_default_row_limit(self):
         """Creation inherits guess_columns' 100-row default window.
@@ -868,11 +851,11 @@ class TestIntegrationTypeEnforcement:
         """
         ds = DataSet([], columns=[('category', str), ('value', int)])
 
-        ds.append({'category': 'A', 'value': '100'}, validate=True)
+        ds.append({'category': 'A', 'value': '100'})
         ds.extend([
             {'category': 'A', 'value': '200'},
             {'category': 'B', 'value': '400'},
-        ], validate=True)
+        ])
 
         result = ds.bucket(['category'], ['value'])
 
@@ -895,8 +878,8 @@ class TestIntegrationTypeEnforcement:
 
         assert ds.columns == [('id', int), ('val', float)]
 
-        ds.append({'id': '2', 'val': '20.5'}, validate=True)
-        ds.extend([{'id': '3', 'val': '30.5'}], validate=True)
+        ds.append({'id': '2', 'val': '20.5'})
+        ds.extend([{'id': '3', 'val': '30.5'}])
 
         assert [row['id'] for row in ds.container] == [None, None, 1, 2, 3]
 
@@ -1004,25 +987,21 @@ class TestGuessColumnsEdgeCases:
 class TestBulkLoadValidation:
     """Tests for the lazy and validated paths on bulk loads."""
 
-    def test_bulk_load_lazy_then_convert(self):
-        """A lazy bulk load converts on the first read, once.
+    def test_bulk_load_converts_every_row(self):
+        """A thousand-row extend converts all of them, not just the first.
 
-        Mutation: extend marking `_types_converted` True on the lazy path.
-        Oracle: the flag before and after the first read, and the ints
-            that read produces.
+        Mutation: extend converting only the first row it is handed, or
+            only the last.
+        Oracle: every row checked, read from the container directly.
         """
         rows = [{'id': str(i), 'value': str(i * 1.5)} for i in range(1000)]
 
         ds = DataSet([], columns=[('id', int), ('value', float)])
-        ds.extend(rows, validate=False)
+        ds.extend(rows)
 
         assert len(ds) == 1000
-        assert ds._types_converted is False
-
-        _ = ds[0]
-
-        assert ds._types_converted is True
         assert all(isinstance(row['id'], int) for row in ds.container)
+        assert all(isinstance(row['value'], float) for row in ds.container)
 
     def test_validated_append_for_critical_data(self):
         """A validated append round-trips numbers without losing digits.
@@ -1037,7 +1016,7 @@ class TestBulkLoadValidation:
             ds.append({
                 'transaction_id': str(1000 + i),
                 'amount': str(100.50 * (i + 1))
-            }, validate=True)
+            })
 
         ids = [row['transaction_id'] for row in ds.container]
 
@@ -1050,23 +1029,6 @@ class TestBulkLoadValidation:
 
 class TestAppendExtendCombinations:
     """Tests combining append and extend operations."""
-
-    def test_alternating_validated_lazy_operations(self):
-        """Each call's validate flag governs only that call's rows.
-
-        Mutation: validate remembered on the instance, so one call's
-            setting leaks into the next.
-        Oracle: hand-computed alternating list of ints and strings.
-        """
-        ds = DataSet([], columns=[('a', int)])
-
-        ds.append({'a': '1'}, validate=True)
-        ds.append({'a': '2'}, validate=False)
-        ds.extend([{'a': '3'}, {'a': '4'}], validate=True)
-        ds.extend([{'a': '5'}, {'a': '6'}], validate=False)
-        ds.append({'a': '7'}, validate=True)
-
-        assert [row['a'] for row in ds.container] == [1, '2', 3, 4, '5', '6', 7]
 
 
 # --- Additional Edge Case Tests ---
@@ -1111,7 +1073,7 @@ def test_validate_with_nested_dict_values():
     Oracle: the nested literal written out by hand.
     """
     ds = DataSet([], columns=[('data', dict)])
-    ds.append({'data': {'nested': {'value': 123}}}, validate=True)
+    ds.append({'data': {'nested': {'value': 123}}})
 
     assert ds.container[0]['data'] == {'nested': {'value': 123}}
 
@@ -1126,12 +1088,12 @@ def test_validate_with_list_values():
         take.
     """
     ds = DataSet([], columns=[('items', list)])
-    ds.append({'items': [1, 2, 3]}, validate=True)
+    ds.append({'items': [1, 2, 3]})
 
     assert ds.container[0]['items'] == [1, 2, 3]
 
     with pytest.raises(ConversionError, match=r"column 'items' declared list"):
-        ds.append({'items': 42}, validate=True)
+        ds.append({'items': 42})
 
 
 def test_guess_columns_with_empty_string_values():
@@ -1184,7 +1146,7 @@ def test_validate_coerces_value_to_str_column():
     Oracle: hand-computed '123', a str where an int went in.
     """
     ds = DataSet([], columns=[('text', str)])
-    ds.append({'text': 123}, validate=True)
+    ds.append({'text': 123})
 
     assert ds.container[0]['text'] == '123'
     assert isinstance(ds.container[0]['text'], str)
@@ -1349,7 +1311,7 @@ def test_convert_value_instances_temporal_values():
         't': '14:30',
         }
     ds = DataSet([], columns=[('dt', DateTime), ('d', Date), ('t', Time)])
-    ds.append(row_in, validate=True)
+    ds.append(row_in)
     row = ds.container[0]
 
     assert isinstance(row['dt'], DateTime)
@@ -1373,7 +1335,7 @@ def test_convert_value_parses_dynamic_date_code():
     """
     today = datetime.date.today()
     ds = DataSet([], columns=[('d', Date), ('dt', DateTime)])
-    ds.append({'d': 'T', 'dt': 'T'}, validate=True)
+    ds.append({'d': 'T', 'dt': 'T'})
     row = ds.container[0]
     stamp = row['dt']
 
@@ -1396,7 +1358,7 @@ def test_dynamic_date_code_never_enters_the_parse_cache():
     date_start = _cached_date_parse.cache_info()
     dt_start = _cached_datetime_parse.cache_info()
 
-    ds.append({'d': '1993-07-19', 'dt': '1993-07-19'}, validate=True)
+    ds.append({'d': '1993-07-19', 'dt': '1993-07-19'})
     date_fixed = _cached_date_parse.cache_info()
     dt_fixed = _cached_datetime_parse.cache_info()
     date_lookups = date_fixed.hits + date_fixed.misses
@@ -1405,7 +1367,7 @@ def test_dynamic_date_code_never_enters_the_parse_cache():
     assert date_lookups == date_start.hits + date_start.misses + 1
     assert dt_lookups == dt_start.hits + dt_start.misses + 1
 
-    ds.append({'d': 'T', 'dt': 'T'}, validate=True)
+    ds.append({'d': 'T', 'dt': 'T'})
     date_code = _cached_date_parse.cache_info()
     dt_code = _cached_datetime_parse.cache_info()
 
@@ -1638,7 +1600,7 @@ def test_a_value_that_will_not_convert_raises(typ, value):
     ds = DataSet([], columns=[('c', typ)])
 
     with pytest.raises(ConversionError, match=r"column 'c' declared"):
-        ds.append({'c': value}, validate=True)
+        ds.append({'c': value})
 
 
 def test_a_column_declared_object_never_raises():
@@ -1670,7 +1632,7 @@ def test_the_conversion_error_names_the_column_and_both_types():
     ds = DataSet([], columns=[('amount', float)])
 
     with pytest.raises(ConversionError) as excinfo:
-        ds.append({'amount': 'abc'}, validate=True)
+        ds.append({'amount': 'abc'})
 
     message = str(excinfo.value)
     assert "column 'amount'" in message

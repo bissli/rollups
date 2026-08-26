@@ -118,10 +118,11 @@ Two placements look wrong and are not:
 
 ## Conversion is per-function
 
-Values convert to their column's type on first read, not at
-construction. A free function that reads rows calls
-`dataset.ensure_types()` first rather than assuming a caller did. It is
-idempotent and reads one flag on the second call.
+Values convert to their column's type as they enter, through the
+constructor, `append` or `extend`. A free function that reads rows still
+calls `dataset.ensure_types()` first rather than assuming a caller did:
+it is a no-op for data that entered clean, and it is what catches a
+column re-declared after the rows landed.
 
 `join_datasets` (on both sides), `bucket_dataset`, `pivot_dataset`,
 `write_csv_file`, `write_excel_file` and `to_json` call it.

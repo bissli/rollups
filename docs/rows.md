@@ -12,9 +12,11 @@ rows.add_empty_row()             # None in every column
 rows.pop('name', 'ana')          # remove and return the first match
 ```
 
-`append` and `extend` take `validate=True` to convert types now rather
-than on the first read. That costs time up front and surfaces a bad
-value immediately, while the default defers both.
+`append` and `extend` convert each row as it lands, and raise
+`ConversionError` on a value that will not convert. They take the
+caller's own row objects and convert them in place, so a key no column
+declares survives, and a declared column the row lacks is added holding
+None. Deep-copy first to keep the two sides independent.
 
 `pop` answers the row it removed, or `None` where nothing matched.
 

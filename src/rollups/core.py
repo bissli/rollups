@@ -102,6 +102,7 @@ class DataSet:
     """
 
     _plan_cache = None
+    _converted_columns = None
 
     def __init__(
         self,
@@ -139,11 +140,18 @@ class DataSet:
         infer_numeric_strings : bool, default False
             If True, a numeric string yields int or float rather than str.
 
+        Raises
+        ------
+        ConversionError
+            Where a value does not convert to its column's type.
+
         Notes
         -----
         - Set `cols` and `typs` yourself, or let them come from
           item[exemplar].
-        - Type conversion is lazy: it runs on the first read, not here.
+        - Values convert here, not on the first read, so a value that
+          does not match its column raises at the line that built the
+          dataset rather than at some later reader.
         - Declare a column `object` where its type is unknown. Every
           value is an instance of `object`, so such a column converts
           nothing and rejects nothing.
@@ -158,6 +166,7 @@ class DataSet:
             self.columns = list(container.columns)
             self._summary_args = container._summary_args[:]
             self._types_converted = container._types_converted
+            self._converted_columns = container._converted_columns
         else:
             self.container = [row if isinstance(row, lazydict) else lazydict(row) for row in container]
             self.columns = list(columns) \
@@ -173,6 +182,11 @@ class DataSet:
         self.total = total or len(self.container)
         self.pageable = None
 
+        # Skip the pass for an empty container - there is nothing to
+        # convert, and `_copy_structure` builds one on every copy.
+        if self.container:
+            self.ensure_types()
+
     def __repr__(self):
         return f'{self.__class__.__name__}(cols={len(self.cols)}, rows={len(self.container)})'
 
@@ -183,33 +197,36 @@ class DataSet:
     # container-like methods
     #
 
-    def append(self, obj: lazydict, validate: bool = False) -> None:
-        """Append a dict row to the dataset.
+    def append(self, obj: lazydict) -> None:
+        """Append a dict row to the dataset, converting it to the column types.
 
         Parameters
         ----------
         obj : lazydict
-            Row to append.
-        validate : bool, default False
-            If True, convert types now. If False, conversion waits for
-            the first read, which is faster but defers any error.
+            Row to append. Converted in place.
+
+        Raises
+        ------
+        ConversionError
+            Where a value does not convert to its column's type.
+
+        Notes
+        -----
+        - Converts the one new row rather than re-arming a pass over the
+          whole container: re-arming makes an append-then-read loop
+          quadratic.
         """
-        if validate and self.columns:
-            converted = lazydict()
-            for name, typ in self.columns:
-                val = obj.get(name)
-                converted[name] = _convert_value(val, typ, name)
-            self.container.append(converted)
-        else:
-            self.container.append(obj)
-            # Convert the one new row rather than re-arming a pass over
-            # the whole container: re-arming makes an append-then-read
-            # loop quadratic. Where the pass is already armed there is
-            # nothing to do, since it will reach this row too.
-            if self._types_converted:
-                self._convert_row(obj, self._conversion_plan())
-            else:
-                self._types_converted = False
+        row = obj if isinstance(obj, lazydict) else lazydict(obj)
+        self.container.append(row)
+        if self._columns:
+            self._convert_row(row, self._conversion_plan())
+            # Record that the container is converted, or the next read
+            # runs a full pass over rows this already converted - twice
+            # the work for an append-then-read loop. `_conversion_plan`
+            # has just refreshed its snapshot against `_columns`, so
+            # reuse it rather than building the same list again.
+            self._types_converted = True
+            self._converted_columns = self._plan_cache[0]
 
     @ensure_types_converted
     def __getitem__(self, key: int) -> lazydict:
@@ -233,34 +250,34 @@ class DataSet:
     def __iter__(self):
         return self.container.__iter__()
 
-    def extend(self, sequence: list[lazydict], validate: bool = False) -> None:
-        """Extend the dataset by a sequence of rows or another DataSet.
+    def extend(self, sequence: list[lazydict]) -> None:
+        """Extend the dataset by rows or another DataSet, converting each.
 
         Parameters
         ----------
         sequence : list of lazydict or DataSet
-            Rows to add.
-        validate : bool, default False
-            If True, convert types now. If False, conversion waits for
-            the first read, which is faster but defers any error.
+            Rows to add. Converted in place.
+
+        Raises
+        ------
+        ConversionError
+            Where a value does not convert to its column's type.
+
+        See Also
+        --------
+        rollups.core.DataSet.append : the same contract, one row
         """
-        if validate and self.columns:
-            for obj in sequence:
-                converted = lazydict()
-                for name, typ in self.columns:
-                    val = obj.get(name)
-                    converted[name] = _convert_value(val, typ, name)
-                self.container.append(converted)
-        else:
-            self.container.extend(sequence)
-            # See the note in append(): converting the new rows beats
-            # re-arming a pass over every row already converted.
-            if self._types_converted:
-                cols_to_convert = self._conversion_plan()
-                for obj in sequence:
-                    self._convert_row(obj, cols_to_convert)
-            else:
-                self._types_converted = False
+        rows = [obj if isinstance(obj, lazydict) else lazydict(obj)
+                for obj in sequence]
+        self.container.extend(rows)
+        if self.columns and rows:
+            plan = self._conversion_plan()
+            for row in rows:
+                self._convert_row(row, plan)
+            # See the note in append(): without this the next read
+            # re-converts every row this just converted.
+            self._types_converted = True
+            self._converted_columns = self._plan_cache[0]
 
     def sort(self, key=None, reverse=False) -> Self:
         """Sort rows the way list.sort does.
@@ -361,13 +378,24 @@ class DataSet:
 
         Notes
         -----
-        - Idempotent, and cheap to call again: it reads one flag and
-          returns. A function outside this class that reads rows should
-          call it first rather than assume a caller did.
+        - Idempotent, and cheap to call again: it compares the declared
+          columns against the ones the last pass ran on and returns. A
+          function outside this class that reads rows should call it
+          first rather than assume a caller did.
+        - Values convert as they enter, so this is a no-op for data that
+          arrived through the constructor, `append` or `extend`. It
+          earns its keep when a column is RE-DECLARED, which no entry
+          point sees.
+        - It validates against a snapshot rather than trusting a flag
+          cleared on write: `columns` hands out the live list and
+          `add_column` edits it in place, so a flag cleared at each
+          known write goes stale on the writes nobody remembered.
         """
-        if not self._types_converted:
-            self.convert_container_types()
-            self._types_converted = True
+        snapshot = [tuple(pair) for pair in self._columns]
+        if self._types_converted and self._converted_columns == snapshot:
+            return
+        self.convert_container_types()
+        self._converted_columns = snapshot
 
     def _ensure_types_converted(self) -> None:
         """Convert types lazily on first access if needed. Alias of
@@ -381,6 +409,9 @@ class DataSet:
         ds = self.__class__()
         ds.columns = list(self.columns) if self.columns else self.columns
         ds._summary_args = self._summary_args
+        # Carry what the last pass ran against, or the copy's own
+        # ensure_types finds no snapshot and re-converts every row.
+        ds._converted_columns = self._converted_columns
         ds.page = self.page
         ds.per_page = self.per_page
         ds.total = self.total
@@ -981,7 +1012,9 @@ class DataSet:
         -----
         - Falsy values are skipped, so a zero or None does not reach
           `row_func`.
-        - The new column is typed float.
+        - The new column is typed float. `add_column` converts what this
+          wrote, which is what keeps an integer total out of a float
+          column.
         """
         columns = columns or [_[0] for _ in self.columns]
         for row in self:
@@ -1094,21 +1127,25 @@ class DataSet:
         else:
             self._columns.append((name, typ))
         self.columns = self._columns
+        # Convert what this writes. Without it the value lands raw and
+        # stays raw: the method already converted on the way in, so the
+        # flag says converted, and neither re-arm catches a NEW column -
+        # the setter sees the name already among the known ones, and the
+        # old_type test below needs a type there was none of.
         if values is not None:
             if len(values) != len(self.container):
                 raise ValueError(
                     f'values length {len(values)} must match dataset length {len(self.container)} for column {name}')
             for row, val in zip(self.container, values):
-                row[name] = val
+                row[name] = _convert_value(val, typ, name)
         elif value is not None:
             value_fn = value if callable(value) else lambda _: value
             for row in self.container:
-                row[name] = value_fn(row)
+                row[name] = _convert_value(value_fn(row), typ, name)
         else:
             for row in self.container:
-                row[name] = dict.get(row, name)
-        if old_type is not None and old_type != typ:
-            self._types_converted = False
+                row[name] = _convert_value(dict.get(row, name), typ, name)
+        self._converted_columns = [tuple(pair) for pair in self._columns]
 
     def remove_column(self, name: str) -> None:
         """Remove a column and drop it from every row.
@@ -1262,6 +1299,7 @@ class DataSet:
             self._convert_row(row, plan)
 
         self._types_converted = True
+        self._converted_columns = [tuple(pair) for pair in self._columns]
 
     @staticmethod
     def _convert_row(row: lazydict, plan: tuple) -> None:
@@ -1279,7 +1317,6 @@ class DataSet:
         Notes
         -----
         - A column the row is missing is added, holding None.
-        - A column the row is missing is added, holding None.
         - A None value is left alone, and so is a value already of the
           declared type.
         - A date, datetime or time column also normalizes a value of the
@@ -1290,15 +1327,21 @@ class DataSet:
           type.
         """
         names, plain, temporal = plan
+        # Read through the dict method. A row is a lazydict, whose
+        # __getitem__ is a Python-level override with an attribute
+        # fallback; going through it costs more than the conversion
+        # itself on a column that needs none. The loop below leaves
+        # every declared name present, so the fallback is never wanted.
+        read = dict.__getitem__
         for name in names:
             if name not in row:
                 row[name] = None
         for name, typ in plain:
-            val = row[name]
+            val = read(row, name)
             if val is not None and not isinstance(val, typ):
                 row[name] = _convert_value(val, typ, name)
         for name, typ, target, source, aware in temporal:
-            val = row[name]
+            val = read(row, name)
             if val is None:
                 continue
             if isinstance(val, source) and not isinstance(val, target):

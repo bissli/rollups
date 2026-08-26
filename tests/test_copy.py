@@ -502,36 +502,44 @@ class TestTypesConvertedFlag:
 
     @pytest.mark.parametrize('copy_method', ['copy', 'shallowcopy'])
     def test_copy_preserves_types_converted_flag(self, copy_method):
-        """Verify copy and shallowcopy do not re-run conversion.
+        """Verify copy and shallowcopy carry the converted state over.
 
-        Mutation: `ds._types_converted = False` in place of the
-            carried-over flag, which makes the copy convert on read.
-        Oracle: the '123' string still unconverted in the copy.
+        Mutation: `_copy_structure` dropping `_converted_columns`, so the
+            copy finds no snapshot and re-runs a full pass over rows the
+            source already converted.
+        Oracle: a spy over convert_container_types, which must not fire
+            while the copy is read.
         """
-        ds = DataSet([
-            {'value': '123'}
-        ], columns=[('value', int)])
-        ds._types_converted = True
-        method = getattr(ds, copy_method)
-        result = method()
-        assert result._types_converted is True
-        assert result[0]['value'] == '123'
+        ds = DataSet([{'value': '123'}], columns=[('value', int)])
+        calls = []
+        real = DataSet.convert_container_types
+
+        def spy(self, *args, **kwargs):
+            calls.append(self)
+            return real(self, *args, **kwargs)
+
+        DataSet.convert_container_types = spy
+        try:
+            result = getattr(ds, copy_method)()
+            assert result[0]['value'] == 123
+        finally:
+            DataSet.convert_container_types = real
+
+        assert calls == []
 
     def test_deepcopy_ensures_types_converted(self):
-        """Verify deepcopy converts before it copies.
+        """Verify a deepcopy holds converted values, not raw ones.
 
-        Mutation: dropping the conversion block at the top of
-            deepcopy(), which would set the flag over unconverted
-            values.
+        Mutation: deepcopy copying the rows before the conversion block
+            at the top of it runs.
         Oracle: hand-computed int 123 from the '123' string.
         """
-        ds = DataSet([
-            {'value': '123'}
-        ], columns=[('value', int)])
-        assert ds._types_converted is False
+        ds = DataSet([{'value': '123'}], columns=[('value', int)])
+
         deep = ds.deepcopy()
+
         assert deep._types_converted is True
-        assert deep[0]['value'] == 123
+        assert deep.container[0]['value'] == 123
 
 
 # --- Deepcopy Summary Test ---
@@ -764,12 +772,15 @@ def test_copy_very_large_dataset():
 # --- Source-State Tests - What deepcopy Leaves Behind ---
 
 def test_deepcopy_does_not_reconvert_the_source():
-    """Verify deepcopy flags the source so conversion runs only once.
+    """Verify repeated deepcopies never re-run a conversion pass.
 
-    Mutation: `self._types_converted = False` (or None) after the
-        conversion call in deepcopy(), leaving the source unflagged.
+    The constructor converts, so no later pass has anything to do. This
+    pins that: a deepcopy must not re-scan rows already converted.
+
+    Mutation: deepcopy calling convert_container_types unconditionally,
+        or ensure_types trusting no snapshot, so every copy re-scans.
     Oracle: a spy counting convert_container_types calls, hand-counted
-        at 1 across two deepcopies of the same dataset.
+        at 0 across two deepcopies.
     """
     ds = DataSet([{'value': '123'}], columns=[('value', int)])
     convert_calls = []
@@ -782,9 +793,9 @@ def test_deepcopy_does_not_reconvert_the_source():
     ds.convert_container_types = counting_convert
 
     first = ds.deepcopy()
-    assert convert_calls == [1]
     second = ds.deepcopy()
-    assert convert_calls == [1]
+
+    assert convert_calls == []
     assert first[0]['value'] == 123
     assert second[0]['value'] == 123
 

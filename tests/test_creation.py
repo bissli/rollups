@@ -189,8 +189,7 @@ def test_row_callable_survives_a_validated_append():
     Oracle: hand-computed 4 + 5 read off the appended row.
     """
     ds = DataSet([], columns=[('a', int), ('b', int), ('total', str)])
-    ds.append({'a': 4, 'b': 5, 'total': lambda row: row.a + row.b},
-              validate=True)
+    ds.append({'a': 4, 'b': 5, 'total': lambda row: row.a + row.b})
 
     assert ds[0].total == 9
 
@@ -895,7 +894,7 @@ def test_creation_type_conversion_preserves_none():
     assert ds[0]['a'] is None
     assert ds[0]['b'] is None
 
-    ds.append(attrdict({'a': None, 'b': None}), validate=True)
+    ds.append(attrdict({'a': None, 'b': None}))
 
     assert ds[1]['a'] is None
     assert ds[1]['b'] is None
@@ -923,19 +922,22 @@ def test_creation_handles_date_string_conversion():
 # --- _types_converted flag ---
 
 
-def test_types_converted_flag_starts_false():
-    """Verify conversion is deferred, not run in the constructor.
+def test_the_constructor_converts_rather_than_deferring():
+    """Verify values convert in the constructor, not on the first read.
 
-    Mutation: the constructor calling convert_container_types eagerly.
-    Oracle: the flag plus the raw string still sitting in the container.
+    Mutation: the constructor leaving conversion to the first read,
+        which is the deferral this replaced.
+    Oracle: the container read DIRECTLY - through ds[0] a deferred
+        implementation would look identical.
     """
     ds = DataSet(
         [{'a': '123', 'b': '45.6'}],
         columns=[('a', int), ('b', float)]
     )
 
-    assert ds._types_converted is False
-    assert ds.container[0]['a'] == '123'
+    assert ds._types_converted is True
+    assert ds.container[0]['a'] == 123
+    assert ds.container[0]['b'] == 45.6
 
 
 @pytest.mark.parametrize('trigger_method', [
@@ -944,18 +946,24 @@ def test_types_converted_flag_starts_false():
     'unwind',
 ])
 def test_types_converted_flag_triggers(trigger_method):
-    """Verify each read path converts types before handing rows back.
+    """Verify each read path converts a RE-DECLARED column first.
+
+    Values convert as they enter, so a re-declaration is the only thing
+    left for a read to catch up on - which makes it the case that still
+    tells a decorated read path from an undecorated one.
 
     Mutation: dropping @ensure_types_converted from __getitem__ or
         __iter__ (unwind reads through __iter__).
-    Oracle: the flag and the converted int, read straight off the
-        container after each access path.
+    Oracle: the string the re-declared column must hold, read straight
+        off the container after each access path.
     """
     ds = DataSet(
         [{'a': '123'}, {'a': '456'}],
         columns=[('a', int)]
     )
-    assert ds._types_converted is False
+    assert ds.container[0]['a'] == 123
+
+    ds.columns = [('a', str)]
 
     if trigger_method == 'index_access':
         _ = ds[0]
@@ -965,8 +973,7 @@ def test_types_converted_flag_triggers(trigger_method):
     elif trigger_method == 'unwind':
         list(ds.unwind('a'))
 
-    assert ds._types_converted is True
-    assert ds.container[0]['a'] == 123
+    assert ds.container[0]['a'] == '123'
 
 
 # --- missing and sparse columns ---

@@ -703,8 +703,8 @@ def test_flatten_with_datetime_in_flattened_column():
     result = ds.flatten(['id'], ['created', 'updated'])
 
     assert [(r.key, r.val) for r in result] == [
-        ('created', DateTime(2024, 1, 1, 10, 0)),
-        ('updated', DateTime(2024, 6, 15, 14, 30)),
+        ('created', DateTime(2024, 1, 1, 10, 0, tzinfo=UTC)),
+        ('updated', DateTime(2024, 6, 15, 14, 30, tzinfo=UTC)),
         ]
 
 

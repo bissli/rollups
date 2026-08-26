@@ -666,13 +666,17 @@ class TestDataSetNumericStringScanning:
     def test_mixed_string_types_first_wins(self):
         """Verify a later text value does not unseat an int column.
 
+        Read through guess_columns rather than a constructed DataSet:
+        the rows declare int and hold 'text', so building one raises
+        now - which would test conversion rather than inference.
+
         Mutation: `typ = row_typ` on every row rather than only while
           typ is type(None), which lets 'text' win.
         Oracle: the same rows without the trailing 'text' type int.
         """
         rows = [{'val': None}, {'val': '123'}, {'val': 'text'}]
-        ds = DataSet(rows, infer_numeric_strings=True)
-        assert ds.colmap['val'] == int
+        columns = DataSet.guess_columns(rows, infer_numeric_strings=True)
+        assert dict(columns)['val'] == int
 
     def test_leading_zero_code_column_keeps_digits(self):
         """Verify a leading-zero code column stays str, digits intact.

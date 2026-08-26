@@ -80,17 +80,21 @@ there, logged at debug rather than raised.
 
 ## Types
 
-Values convert to their column's type on **first read**, not at
-construction. A dataset built and discarded never pays for it, and
-the first read of any row converts the whole container.
+Values convert to their column's type **as they enter** - in the
+constructor, in `append` and in `extend`. A value that does not convert
+raises `ConversionError` at the line that supplied it, rather than at
+whatever reads the dataset next.
 
 ```python
 rows = DataSet([{'n': '42'}], columns=[('n', int)])
-rows[0].n     # 42, an int - converted on this read
+rows.container[0]['n']    # 42, an int - already converted
 ```
 
-Call `ensure_types()` to force the conversion before reading rows
-directly. It is idempotent and reads one flag on the second call.
+`ensure_types()` is what a reader calls to be sure. It is a no-op for
+data that entered through those three, and earns its keep after a
+column is RE-DECLARED, which no entry point sees. It compares the
+declared columns against the ones the last pass ran on, so it catches a
+re-declaration whichever writer made it.
 `convert_container_types()` is the pass it runs, and converts
 unconditionally - the call to re-run conversion after rows have been
 edited in place.

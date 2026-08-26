@@ -1,7 +1,7 @@
 # Documentation
 
 `DataSet` is a list of dictionary rows, each column declaring a Python
-type that its values convert to on first read. Start at
+type that its values convert to as they enter. Start at
 [Getting started](getting-started.md); the project [README](../README.md)
 carries the overview and the install.
 
