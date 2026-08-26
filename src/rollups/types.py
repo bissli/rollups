@@ -94,10 +94,6 @@ def smart_type(val, infer_numeric_strings: bool = False):
     type
         Inferred type for the value.
     """
-    if val.__class__ == DateTime:
-        return DateTime
-    if val.__class__ == Date:
-        return Date
     if val.__class__ == datetime.datetime \
             and val.hour == val.minute == val.second == val.microsecond == 0:
         logger.warning('Converting midnight datetime.datetime to Date type - incorrectly typing DateTime columns')

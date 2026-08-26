@@ -95,18 +95,28 @@ rows.json(format_value=fn)               # fn(row, column, type)
 rows.json(generated_at='2024-03-05')     # extra keys, ignored when raw
 ```
 
-Dates are written in ISO form and parsed back on read.
+Dates, datetimes and times are written in ISO form.
 
-Reading is the mirror, and **the return shape follows `raw`**:
+Reading is the mirror. By default `from_json` reads whichever of the two
+shapes it is handed and answers a DataSet, so the obvious round trip
+works:
 
 ```python
-rows = DataSet.from_json(text)                    # raw=True: a DataSet
-rows, extra = DataSet.from_json(text, raw=False)  # ... a pair
+DataSet.from_json(rows.json())                    # a DataSet, types intact
+DataSet.from_json('[{"a": 1}]')                   # a DataSet
+rows, extra = DataSet.from_json(text, raw=False)  # a pair
 ```
 
-With `raw=False` the second item holds every key but `data`, `order` and
-`types` - whatever was folded in on the way out. A declared type wins
-over the parsed one, so `types` of `['int']` reads `2.0` back as `2`.
+Name `raw` to fix the shape instead: `raw=True` reads a bare array,
+`raw=False` reads the object and answers a pair whose second item holds
+every key but `data`, `order` and `types` - whatever was folded in on
+the way out.
+
+A declared type wins over the parsed one, so `types` of `['int']` reads
+`2.0` back as `2`. Where the payload declares no types, an ISO date
+string reads back as a date; where it declares them, the declared type
+is the only converter, so a column declared `str` keeps its strings
+whatever they look like.
 
 ## excel
 

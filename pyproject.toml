@@ -17,7 +17,7 @@ classifiers = [
 ]
 dependencies = [
   "pandas",
-  "libb-util",
+  "libb-util (>=0.0.52)",
   "opendate",
   "prettytable (>=3.12.0)",
 ]

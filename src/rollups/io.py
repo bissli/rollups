@@ -320,7 +320,18 @@ def to_json(dataset: 'DataSet', columns=None, raw=False,
     Returns
     -------
     str
-        The json text. Dates are written in ISO form.
+        The json text. Dates, datetimes and times are written in ISO
+        form, each column's type under its `__name__`.
+
+    See Also
+    --------
+    rollups.core.DataSet.from_json : reads either shape back
+
+    Notes
+    -----
+    - The object shape is canonical, and is what `DataSet.from_json`
+      reads back into a typed DataSet. A bare array carries no types,
+      so reading one back infers them from the values instead.
     """
     dataset.ensure_types()
     if columns is None:

@@ -17,8 +17,6 @@ from collections.abc import Callable, Hashable
 from functools import wraps
 from typing import TYPE_CHECKING, Any
 
-from opendate import Date, DateTime, Time
-
 import libb
 from libb import lazydict
 
@@ -110,8 +108,6 @@ def bucket_dataset(dataset: 'DataSet', keycols: str | list[str],
         actual_type = result_value.__class__
         if original_type is float and actual_type is int:
             return float
-        if actual_type in {Date, DateTime, Time}:
-            return actual_type
         return actual_type
 
     def safe(func):

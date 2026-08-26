@@ -1442,36 +1442,74 @@ class DataSet:
         return cls(rows[list(rows.keys())[0]], **opts) if rows else {}
 
     @classmethod
-    def from_json(cls, data, raw=True) -> Self | tuple[Self, dict]:
+    def from_json(cls, data, raw=None) -> Self | tuple[Self, dict]:
         """Build a DataSet from json text.
 
         Parameters
         ----------
         data : str
-            Json text. ISO date strings are parsed back to dates.
-        raw : bool, default True
-            If True, read a bare array of row objects. If False, read
-            an object carrying `data`, and optionally `order`, `types`
-            and any further keys.
+            Json text, either the object `json()` writes by default or
+            a bare array of row objects.
+        raw : bool or None, default None
+            None reads whichever of the two shapes `data` carries and
+            answers a DataSet. True reads a bare array. False reads the
+            object and answers (DataSet, other).
 
         Returns
         -------
         DataSet or tuple
-            A DataSet where `raw` is True; otherwise (DataSet, other),
-            where other holds every key but `data`, `order` and
-            `types`.
+            A DataSet, except under `raw=False`, which answers
+            (DataSet, other) - other holding every key but `data`,
+            `order` and `types`.
+
+        See Also
+        --------
+        rollups.io.to_json : the shape this reads and what it writes
 
         Notes
         -----
+        - The object shape is canonical: it carries `types`, so only it
+          restores the column types `json()` wrote. `from_json(ds.json())`
+          round-trips.
         - A declared type wins over the parsed one, so `types` of
           ['int'] reads 2.0 as 2 rather than as a float.
+        - Where the payload declares no types, an ISO date string reads
+          back as a date. Where it declares them, the declared type is
+          the only converter, so a column declared `str` keeps its
+          strings whatever they look like.
+        - A type name that names no type reads as an untyped column.
         """
-        obj = json.loads(data, cls=libb.JSONDecoderISODate)
-        if raw:
+        obj = json.loads(data)
+        declared = obj.get('types') if isinstance(obj, dict) else None
+        if not declared:
+            # A payload declaring no types has nothing but the decoder's
+            # guess to read a date with. One that declares them must not
+            # guess: the guess rewrites a declared str column's
+            # ISO-looking values into dates before the declared type is
+            # ever consulted.
+            obj = json.loads(data, cls=libb.JSONDecoderISODate)
+        if raw or (raw is None and not isinstance(obj, dict)):
             return cls(obj)
-        handle_date = {'date': datetime.date, 'datetime': datetime.datetime}
-        types = [handle_date.get(typ, locate(typ)) for typ in (obj.get('types') or [])]
+        # `to_json` writes each type's __name__, which locate cannot
+        # undo for these six: it answers None for the three opendate
+        # names and for 'date', and the MODULE of that name for
+        # 'datetime' and 'time' - and a module reaching isinstance
+        # raises TypeError.
+        type_by_name = {
+            'date': datetime.date,
+            'datetime': datetime.datetime,
+            'time': datetime.time,
+            'Date': Date,
+            'DateTime': DateTime,
+            'Time': Time,
+            }
+        types = []
+        for name in (declared or []):
+            typ = type_by_name.get(name) or locate(name)
+            types.append(typ if isinstance(typ, type) else None)
         ds = cls(obj['data'], cols=obj.get('order'), typs=types)
+        if raw is None:
+            return ds
         other = {k: v for k, v in obj.items() if k not in {'data', 'order', 'types'}}
         return ds, other
 
