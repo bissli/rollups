@@ -130,6 +130,11 @@ column re-declared after the rows landed.
 never converted, and `transpose` converts only as a side effect of
 iterating the dataset rather than its container.
 
+Both declare their RESULT columns `object`, because both gather values
+of several types into one column - `flatten` into its `val`, `transpose`
+into every transposed column. No single type describes such a column,
+and the one inferred from its first value would reject the rest.
+
 ## Next
 
 - [Extending](extending.md) - subclassing, the backend registry, and

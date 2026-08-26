@@ -333,6 +333,10 @@ def transpose_dataset(dataset: 'DataSet', new_index_name: str,
     -----
     - Assumes the rows are already in the order wanted, and uses
       every column.
+    - Every transposed column is typed `object`, and the index column
+      `str`. One transposed column holds one value from each of the old
+      columns, so no single type describes it and the type inferred from
+      its first value would not hold for the rest.
     """
     pivot_col, _ = dataset.columns[pivot_index]
     cols = [c for c, _ in dataset.columns]
@@ -343,4 +347,5 @@ def transpose_dataset(dataset: 'DataSet', new_index_name: str,
         new_row = {new_index_name: idx}
         new_row.update({old_row[pivot_col]: old_row[idx] for old_row in dataset})
         new_rows.append(new_row)
-    return dataset.__class__(new_rows, cols=new_cols)
+    new_typs = [str] + [object] * (len(new_cols) - 1)
+    return dataset.__class__(new_rows, cols=new_cols, typs=new_typs)
