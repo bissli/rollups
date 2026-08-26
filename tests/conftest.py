@@ -1,14 +1,7 @@
 """Shared fixtures for rollups tests.
 """
-import os
-import sys
-
 import pytest
 from rollups import DataSet
-
-# Tests run against the working tree, not an installed copy.
-src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src'))
-sys.path.insert(0, src_dir)
 
 
 @pytest.fixture(autouse=True)
