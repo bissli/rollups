@@ -333,10 +333,13 @@ def transpose_dataset(dataset: 'DataSet', new_index_name: str,
     -----
     - Assumes the rows are already in the order wanted, and uses
       every column.
-    - Every transposed column is typed `object`, and the index column
-      `str`. One transposed column holds one value from each of the old
-      columns, so no single type describes it and the type inferred from
-      its first value would not hold for the rest.
+    - The index column is typed `str`. Each transposed column is
+      typed from every value it holds, not from its first: the column
+      takes one value from each of the old columns, so the first
+      value's type need not hold for the rest.
+    - A transposed column mixing int and float is typed float. One
+      whose types nothing else covers is typed `object`, which
+      converts nothing and rejects nothing.
     """
     pivot_col, _ = dataset.columns[pivot_index]
     cols = [c for c, _ in dataset.columns]
@@ -347,5 +350,20 @@ def transpose_dataset(dataset: 'DataSet', new_index_name: str,
         new_row = {new_index_name: idx}
         new_row.update({old_row[pivot_col]: old_row[idx] for old_row in dataset})
         new_rows.append(new_row)
-    new_typs = [str] + [object] * (len(new_cols) - 1)
+    # Notes:
+    # - bool stays out of the int/float promotion. It is a subclass
+    #   of int, and a column of flags read back as 1 and 0 loses
+    #   what it was recording.
+    # - An all-None column is typed object rather than NoneType, so
+    #   a later write into it is not rejected.
+    new_typs = [str]
+    for col in new_cols[1:]:
+        seen = {type(val) for val in (row[col] for row in new_rows)
+                if val is not None}
+        if len(seen) == 1:
+            new_typs.append(seen.pop())
+        elif seen and seen <= {int, float}:
+            new_typs.append(float)
+        else:
+            new_typs.append(object)
     return dataset.__class__(new_rows, cols=new_cols, typs=new_typs)

@@ -830,3 +830,44 @@ def test_transpose_and_pivot_return_the_receivers_class():
 
     pivoted = ds.pivot('k', 'v', 'k')
     assert type(pivoted) is _Sub
+
+
+def test_transpose_types_a_column_from_every_value_it_holds():
+    """Verify a transposed column's type covers all of its values.
+
+    Mutation: typing a transposed column from its first value, so the
+        mixed column reads back int and the str value fails to convert;
+        or typing every transposed column object, so the numeric column
+        loses its float declaration.
+    Oracle: hand-computed per column - r1 holds 1 and 2.5, r2 holds 3
+        and 'x', read back against the values that went in.
+    """
+    ds = DataSet([
+        {'name': 'r1', 'q1': 1, 'q2': 2.5},
+        {'name': 'r2', 'q1': 3, 'q2': 'x'},
+    ], cols=['name', 'q1', 'q2'], typs=[str, int, object])
+
+    got = ds.transpose('metric')
+
+    assert got.columns == [('metric', str), ('r1', float), ('r2', object)]
+    assert [tuple(r[c] for c in got.cols) for r in got] == [
+        ('q1', 1.0, 3),
+        ('q2', 2.5, 'x'),
+    ]
+
+
+def test_transpose_types_an_all_none_column_object():
+    """Verify an empty transposed column takes a writable type.
+
+    Mutation: typing the column NoneType from the empty type set, which
+        declares a column nothing can be written into.
+    Oracle: a str written into the column after the transpose, read back
+        unchanged.
+    """
+    ds = DataSet([{'name': 'r1', 'q1': None}, {'name': 'r2', 'q1': None}])
+
+    got = ds.transpose('metric')
+    got.add_column('r1', got.colmap['r1'], value='later')
+
+    assert got.colmap['r1'] is object
+    assert got[0]['r1'] == 'later'
