@@ -848,3 +848,77 @@ def test_add_column_fills_a_column_named_after_a_dict_method():
     ds.add_column('items', str)
 
     assert [row['items'] for row in ds] == [None, None]
+
+
+class Wrapper:
+    """A column type that wraps whatever it is handed.
+    """
+
+    def __init__(self, value):
+        self.value = value
+
+    def __eq__(self, other):
+        return isinstance(other, Wrapper) and other.value == self.value
+
+
+def test_add_column_leaves_a_value_already_of_the_declared_type():
+    """Verify add_column converts exactly what a full pass converts.
+
+    Mutation: dropping the already-an-instance short-circuit from
+        _convert_value, so add_column re-converts a value the
+        container pass leaves alone - object() raising, Wrapper
+        wrapping its own instance, int flattening True to 1.
+    Oracle: the same values written through the container pass, which
+        skips conversion on an isinstance test of its own.
+    """
+    values = {'anything': object, 'wrapped': Wrapper, 'flag': int}
+    row = {'anything': 'kept', 'wrapped': Wrapper(2), 'flag': True}
+
+    whole = DataSet([dict(row)], cols=list(values), typs=list(values.values()))
+    piecemeal = DataSet([{'id': 1}], cols=['id'], typs=[int])
+    for name, typ in values.items():
+        piecemeal.add_column(name, typ, value=row[name])
+
+    for name in values:
+        assert piecemeal[0][name] == whole[0][name]
+    assert piecemeal[0]['anything'] == 'kept'
+    assert piecemeal[0]['wrapped'] == Wrapper(2)
+    assert piecemeal[0]['flag'] is True
+
+
+def test_add_column_still_converts_a_value_of_another_type():
+    """Verify the short-circuit fires on membership, not on any value.
+
+    Mutation: returning val unconverted whenever a type is declared,
+        so an int in a float column stays an int and a numeric string
+        never becomes a number.
+    Oracle: hand-computed 2 -> 2.0 and '3.5' -> 3.5, checked by type
+        as well as by value.
+    """
+    ds = DataSet([{'id': 1}], cols=['id'], typs=[int])
+
+    ds.add_column('a', float, value=2)
+    ds.add_column('b', float, value='3.5')
+
+    assert isinstance(ds[0]['a'], float)
+    assert ds[0]['a'] == 2.0
+    assert ds[0]['b'] == 3.5
+
+
+def test_add_column_truncates_a_datetime_in_a_date_column():
+    """Verify a date column still truncates a datetime it is handed.
+
+    Mutation: letting the date family take the isinstance short-circuit.
+        A DateTime is an instance of datetime.date, so the column would
+        keep the time of day and hold two classes at once.
+    Oracle: hand-computed - 2024-03-01 15:30 declared date reads back
+        as the bare Date, checked by class as well as by value.
+    """
+    ds = DataSet([{'id': 1}], cols=['id'], typs=[int])
+
+    ds.add_column('day', datetime.date, value=DateTime(2024, 3, 1, 15, 30))
+    ds.add_column('plain', Date, value=datetime.date(2024, 3, 1))
+
+    assert type(ds[0]['day']) is Date
+    assert ds[0]['day'] == Date(2024, 3, 1)
+    assert type(ds[0]['plain']) is Date

@@ -25,6 +25,7 @@ DATETIME_TYPES = frozenset({datetime.datetime, DateTime})
 TIME_TYPES = frozenset({datetime.time, Time})
 NUMERIC_TYPES = frozenset({int, float})
 TIME_VALUE_TYPES = (datetime.datetime, datetime.time)
+TEMPORAL_TYPES = DATE_TYPES | DATETIME_TYPES | TIME_TYPES
 
 
 class ConversionError(ValueError):
@@ -195,8 +196,14 @@ def _convert_value(val, typ, name=None):
 
     Notes
     -----
-    - A None value, an undeclared type, and a callable are all returned
-      as they are.
+    - A None value, an undeclared type, a callable, and a value already
+      an instance of the declared type are all returned as they are.
+    - A value that is already an instance of its column's type needs no
+      conversion, and converting it anyway is not harmless: `object`
+      takes no argument, a class that wraps its input wraps its own
+      instance a second time, and `int` turns a bool into 1. The date
+      family is exempt because membership is not enough there - a
+      `datetime.date` in a `Date` column still normalizes.
     - Failure raises rather than handing back the value it could not
       convert. A column that says `float` and holds `'abc'` is a
       mismatch the caller has to know about; the old silent return left
@@ -218,6 +225,9 @@ def _convert_value(val, typ, name=None):
     if val is None or typ is None or typ is None.__class__:
         return val
     if callable(val):
+        return val
+    if (typ not in TEMPORAL_TYPES and isinstance(typ, type)
+            and isinstance(val, typ)):
         return val
     if typ in DATETIME_TYPES:
         if isinstance(val, datetime.date):
