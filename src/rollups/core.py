@@ -34,9 +34,15 @@ from .types import infer_numeric_type  # noqa: F401
 from .types import is_dynamic_date_code  # noqa: F401
 from .types import islistoftuples  # noqa: F401
 from .types import smart_type  # noqa: F401
-from .types import DATE_TYPES, DATETIME_TYPES, TIME_TYPES, TIME_VALUE_TYPES
+from .types import DATE_TYPES, DATETIME_TYPES, NUMERIC_TYPES, TIME_TYPES
+from .types import TIME_VALUE_TYPES
 
 logger = logging.getLogger(__name__)
+
+# A column whose values span one of these families types as that
+# family's widest member. One spanning two of them, or holding any
+# other pair, types as `object` and converts nothing.
+UNIFIABLE_TYPES = (NUMERIC_TYPES, DATE_TYPES, DATETIME_TYPES, TIME_TYPES)
 
 
 def ensure_types_converted(method):
@@ -1800,8 +1806,9 @@ class DataSet:
 
     @staticmethod
     def guess_columns(rows, cols=None, typs=None, exemplar: int = 0,
-                      scan_limit: int = 100, infer_numeric_strings: bool = False):
-        """Guess column types by scanning multiple rows for non-None values.
+                      scan_limit: int | None = 1000,
+                      infer_numeric_strings: bool = False):
+        """Guess column types by scanning rows for non-None values.
 
         Parameters
         ----------
@@ -1813,8 +1820,8 @@ class DataSet:
             Column types. None infers them from the scanned rows.
         exemplar : int, default 0
             Row index supplying the column names and starting the scan.
-        scan_limit : int, default 100
-            Most rows to scan for type inference.
+        scan_limit : int or None, default 1000
+            Most rows to scan for type inference. None scans every row.
         infer_numeric_strings : bool, default False
             If True, a numeric string yields int or float rather than str.
 
@@ -1825,31 +1832,57 @@ class DataSet:
 
         Notes
         -----
-        - A column holding both int and float resolves to float; any
-          other first non-None value settles the type outright.
+        - A column takes the one type its values share. Where they
+          span a family it takes that family's widest member: int with
+          float gives float, `datetime.date` with `Date` gives `Date`,
+          and likewise for the DateTime and Time families.
+        - Any other mix gives `object`, which converts nothing and
+          rejects nothing. An inferred type is a reading of the data,
+          so a column the scan cannot describe says so, rather than
+          holding every row to the first row's class.
+        - The scan reads a sample, so a value below `scan_limit` that
+          disagrees with it still raises `ConversionError` on the way
+          in. Pass None to scan every row where that matters more than
+          the cost of the pass.
+        - A column with no non-None value types `NoneType`.
         """
         if not cols:
             cols = list(rows[exemplar].keys()) if rows else []
         if not typs:
             if rows:
                 typs = []
-                scan_start = exemplar
-                scan_end = min(len(rows), scan_start + scan_limit)
-                scan_rows = rows[scan_start:scan_end]
+                scan_end = (len(rows) if scan_limit is None
+                            else min(len(rows), exemplar + scan_limit))
+                scan_rows = rows[exemplar:scan_end]
                 for col in cols:
-                    typ = type(None)
+                    seen = set()
                     for row in scan_rows:
                         val = row.get(col)
-                        if val is not None:
-                            row_typ = smart_type(
-                                val, infer_numeric_strings=infer_numeric_strings)
-                            if typ is type(None):
-                                typ = row_typ
-                            if typ is int and row_typ is float:
-                                typ = float
-                                break
-                            if typ is not int:
-                                break
+                        if val is None:
+                            continue
+                        seen.add(smart_type(
+                            val, infer_numeric_strings=infer_numeric_strings))
+                        # Stop once no family can hold what has
+                        # turned up: the answer is `object` whatever
+                        # the rows below hold.
+                        if len(seen) > 1 and not any(
+                                seen <= family
+                                for family in UNIFIABLE_TYPES):
+                            break
+                    if not seen:
+                        typ = type(None)
+                    elif len(seen) == 1:
+                        typ = seen.pop()
+                    elif seen <= NUMERIC_TYPES:
+                        typ = float
+                    elif seen <= DATE_TYPES:
+                        typ = Date
+                    elif seen <= DATETIME_TYPES:
+                        typ = DateTime
+                    elif seen <= TIME_TYPES:
+                        typ = Time
+                    else:
+                        typ = object
                     typs.append(typ)
             else:
                 typs = []

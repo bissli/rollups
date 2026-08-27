@@ -1418,19 +1418,24 @@ def test_bucket_infer_aggregation_type_with_set_aggregation():
 
 
 def test_bucket_infer_aggregation_type_multiple_none_groups():
-    """Verify the bucket results supply a type the row scan missed.
+    """Verify the bucket results supply a type the source column lacks.
 
-    Mutation: infer_aggregation_type scanning only the first bucket,
-        which holds None.
-    Oracle: the float type of the lone 99.9 measurement, sitting past
-        the 100-row scan limit that guess_columns reads.
+    Mutation: infer_aggregation_type returning on the first bucket
+        rather than on the first bucket holding a value - bucket A
+        holds None, so it would fall through to the str default.
+    Oracle: the float type of the lone 99.9 measurement, two buckets
+        past the first.
     """
-    rows = [{'id': i, 'category': 'A', 'measure': None} for i in range(100)]
-    rows.extend((
-        {'id': 100, 'category': 'B', 'measure': None},
-        {'id': 101, 'category': 'C', 'measure': 99.9},
-        ))
-    ds = DataSet(rows)
+    rows = [
+        {'id': 0, 'category': 'A', 'measure': None},
+        {'id': 1, 'category': 'B', 'measure': None},
+        {'id': 2, 'category': 'C', 'measure': 99.9},
+        ]
+    # Declared rather than inferred: the scan would read the 99.9 and
+    # type the column float, leaving nothing for the bucket pass to
+    # supply.
+    ds = DataSet(rows, cols=['id', 'category', 'measure'],
+                 typs=[int, str, type(None)])
     assert ds.colmap['measure'] is type(None)
 
     result = ds.bucket(['category'], ['measure'])

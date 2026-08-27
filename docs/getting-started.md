@@ -45,6 +45,22 @@ DataSet(records)                              # amount infers as str
 DataSet(records, infer_numeric_strings=True)  # amount infers as float
 ```
 
+Inference reads the type set of each column, not just its first value.
+A column takes the one type its values share, or that family's widest
+member where they span one - `int` beside `float` gives `float`, and
+`datetime.date` beside `Date` gives `Date`. Any other mix gives
+`object`:
+
+```python
+DataSet([{'x': 1}, {'x': 2.5}])     # x infers as float
+DataSet([{'x': 1}, {'x': 'n/a'}])   # x infers as object, both kept
+```
+
+`scan_limit` caps how many rows that reads, at 1000 by default. It is a
+sample, so a disagreeing value below the cap still raises
+`ConversionError` on the way in; pass `scan_limit=None` to read every
+row where that matters more than the cost of the pass.
+
 `cols` and `typs` are an alternative to `columns`, taking the two halves
 separately. All three read back:
 
@@ -105,8 +121,9 @@ it.
 
 Declare a column `object` where its type is unknown, or where the
 values under it are of several types - which is what `flatten` does for
-its `val` column. Every value is an instance of `object`, so such a
-column converts nothing and rejects nothing.
+its `val` column, and what inference answers for a column no single
+type covers. Every value is an instance of `object`, so such a column
+converts nothing and rejects nothing.
 
 ### What converts
 
@@ -133,7 +150,8 @@ guarantee, not a claim: nothing silently keeps a value of the wrong
 class. Declare `object` where a column genuinely holds anything.
 
 Inference works the same way: a value of an unrecognized class infers as
-its own class.
+its own class, and a column mixing it with another class infers as
+`object`.
 
 [Extending](extending.md#declaring-a-custom-column-type) carries the
 rest of the contract - what such a class should implement for joining,
@@ -180,11 +198,11 @@ rows[0].total          # 12
 
 Three copies, sharing progressively less:
 
-| Call | New container | New rows | New values |
-| --- | --- | --- | --- |
-| `copy()` | yes | no | no |
-| `shallowcopy()` | yes | yes | no |
-| `deepcopy()` | yes | yes | yes |
+| Call            | New container | New rows | New values |
+| --------------- | ------------- | -------- | ---------- |
+| `copy()`        | yes           | no       | no         |
+| `shallowcopy()` | yes           | yes      | no         |
+| `deepcopy()`    | yes           | yes      | yes        |
 
 **`copy()` shares its rows**, so adding a column to the copy adds it to
 the original too - both hold the same dictionaries:

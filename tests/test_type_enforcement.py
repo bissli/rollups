@@ -62,21 +62,23 @@ class TestGuessColumnsScanning:
         assert colmap['b'] is type(None)
 
     def test_guess_columns_finds_type_in_last_scanned_row(self):
-        """The default window covers row 99 but stops before row 100.
+        """The default window covers row 999 but stops before row 1000.
 
-        Mutation: off-by-one in `scan_start + scan_limit`.
-        Oracle: rows 99 and 100 straddle the 100-row default window.
+        Mutation: off-by-one in `exemplar + scan_limit`.
+        Oracle: rows 999 and 1000 straddle the 1000-row default window.
         """
-        inside = [{'val': None} for _ in range(99)]
+        inside = [{'val': None} for _ in range(999)]
         inside.append({'val': 42.5})
         inside.extend([{'val': None} for _ in range(100)])
 
         assert dict(DataSet.guess_columns(inside))['val'] is float
 
-        outside = [{'val': None} for _ in range(100)]
+        outside = [{'val': None} for _ in range(1000)]
         outside.append({'val': 42.5})
 
         assert dict(DataSet.guess_columns(outside))['val'] is type(None)
+        assert dict(DataSet.guess_columns(
+            outside, scan_limit=None))['val'] is float
 
     @pytest.mark.parametrize(('scan_limit', 'expected_type'), [
         (50, type(None)),
@@ -153,12 +155,14 @@ class TestGuessColumnsScanning:
 
         assert columns == [('a', int), ('b', str)]
 
-    def test_guess_columns_non_numeric_type_wins_after_int(self):
-        """A later str never overrides an int already settled on.
+    def test_guess_columns_int_beside_str_is_object(self):
+        """Int and str share no family, so the column takes neither.
 
-        Mutation: `if typ is int and row_typ is float` losing its second
-            term, so any later type replaces int.
-        Oracle: hand-computed; only float promotes an int column.
+        Mutation: `seen <= NUMERIC_TYPES` written as `seen &
+            NUMERIC_TYPES`, which is truthy for {int, str} and would
+            answer float.
+        Oracle: the same rows without 'text' type int, and without 100
+            type str; holding both, the column can be only object.
         """
         rows = [
             {'val': None},
@@ -167,7 +171,9 @@ class TestGuessColumnsScanning:
         ]
         colmap = dict(DataSet.guess_columns(rows))
 
-        assert colmap['val'] is int
+        assert colmap['val'] is object
+        assert dict(DataSet.guess_columns(rows[:2]))['val'] is int
+        assert dict(DataSet.guess_columns(rows[2:]))['val'] is str
 
     def test_guess_columns_with_provided_cols(self):
         """Explicit cols pick the columns; types still come from scanning.
@@ -284,19 +290,24 @@ class TestGuessColumnsScanning:
         columns_full = DataSet.guess_columns(rows, scan_limit=6)
         assert dict(columns_full)['val'] is float
 
-    def test_guess_columns_bool_not_promoted_to_float(self):
-        """A bool column is not promoted by a later float.
+    def test_guess_columns_bool_is_not_a_numeric_type(self):
+        """Bool sits outside the numeric family it subclasses.
 
-        Mutation: the two `typ is int` identity checks rewritten with
-            issubclass, which bool satisfies.
-        Oracle: hand-computed; bool stays bool even beside 1.5.
+        Mutation: NUMERIC_TYPES membership tested with issubclass
+            rather than by set membership, which bool satisfies - a
+            pure bool column would then type float.
+        Oracle: hand-computed; bool alone stays bool, and bool beside
+            1.5 is a cross-family mix, so object.
         """
-        rows = [
+        assert dict(DataSet.guess_columns([
+            {'flag': True},
+            {'flag': False},
+        ]))['flag'] is bool
+
+        assert dict(DataSet.guess_columns([
             {'flag': True},
             {'flag': 1.5},
-        ]
-        colmap = dict(DataSet.guess_columns(rows))
-        assert colmap['flag'] is bool
+        ]))['flag'] is object
 
     def test_guess_columns_promotes_only_mixed_column(self):
         """Promotion is per column, not shared across the row.
@@ -311,16 +322,19 @@ class TestGuessColumnsScanning:
         columns = DataSet.guess_columns(rows)
         assert columns == [('a', float), ('b', str), ('c', int)]
 
-    def test_guess_columns_promotes_int_zero_to_float(self):
-        """A zero counts as a value, so it settles the column type.
+    def test_guess_columns_counts_a_zero_as_a_value(self):
+        """A zero enters the type set, so it settles the column type.
 
-        Mutation: `if val is not None` written as `if val`, skipping 0.
-        Oracle: hand-computed; a skipped 0 would let the later str win.
+        Mutation: `if val is None: continue` written as `if not val`,
+            skipping 0.
+        Oracle: hand-computed; a skipped 0 leaves str alone in the set
+            on the first pair, so object turns to str. The second pair
+            pins the int-to-float widening the zero takes part in.
         """
         assert dict(DataSet.guess_columns([
             {'val': 0},
             {'val': 'text'},
-        ]))['val'] is int
+        ]))['val'] is object
 
         assert dict(DataSet.guess_columns([
             {'val': 0},
@@ -807,18 +821,18 @@ class TestIntegrationTypeEnforcement:
         assert all(isinstance(row['a'], int) for row in ds.container)
 
     def test_dataset_creation_scans_default_row_limit(self):
-        """Creation inherits guess_columns' 100-row default window.
+        """Creation inherits guess_columns' 1000-row default window.
 
         Mutation: the constructor passing a scan_limit of its own.
-        Oracle: a typed value at index 99 and at index 100, straddling
-            the default window.
+        Oracle: a typed value at index 999 and at index 1000,
+            straddling the default window.
         """
-        inside = [{'val': None} for _ in range(99)]
+        inside = [{'val': None} for _ in range(999)]
         inside.append({'val': 42})
 
         assert DataSet(inside).colmap['val'] is int
 
-        outside = [{'val': None} for _ in range(100)]
+        outside = [{'val': None} for _ in range(1000)]
         outside.append({'val': 42})
 
         assert DataSet(outside).colmap['val'] is type(None)
@@ -1097,10 +1111,11 @@ def test_validate_with_list_values():
 
 
 def test_guess_columns_with_empty_string_values():
-    """An empty string is a value, and settles the column as str.
+    """An empty string is a value, and enters the column's type set.
 
     Mutation: inference skipping '' as if it were missing.
-    Oracle: hand-computed; a skipped '' would let the later int win.
+    Oracle: hand-computed; a skipped '' leaves int alone in the set,
+        turning object into int.
     """
     rows = [
         {'val': ''},
@@ -1108,7 +1123,8 @@ def test_guess_columns_with_empty_string_values():
     ]
     colmap = dict(DataSet.guess_columns(rows))
 
-    assert colmap['val'] is str
+    assert colmap['val'] is object
+    assert dict(DataSet.guess_columns(rows[:1]))['val'] is str
 
 
 def test_infer_numeric_strings_edge_cases():

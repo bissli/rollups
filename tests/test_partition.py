@@ -412,20 +412,28 @@ def test_partition_many_groups():
 def test_partition_mixed_type_keys():
     """Verify keys come from converted values, not the raw input.
 
-    Mutation: iterating self.container in place of self, skipping the
-        lazy type conversion __iter__ triggers.
-    Oracle: the inferred float column makes 1, '1' and 1.0 one key.
+    Mutation: the isinstance short-circuit in `_convert_value` widened
+        to return any value unchanged, so '1' stays a str in a float
+        column and splits off into a group of its own.
+    Oracle: one group of three under a declared float; the same rows
+        left to infer give `object`, convert nothing, and make two.
     """
-    ds = DataSet([
+    rows = [
         {'key': 1, 'value': 100},
         {'key': '1', 'value': 200},
-        {'key': 1.0, 'value': 300}])
+        {'key': 1.0, 'value': 300}]
 
-    by_key = ds.partition(lambda x: x.key)
+    declared = DataSet(rows, cols=['key', 'value'], typs=[float, int])
+    by_key = declared.partition(lambda x: x.key)
 
     assert len(by_key) == 1
     assert isinstance(next(iter(by_key)), float)
     assert [row.value for row in by_key[1.0]] == [100, 200, 300]
+
+    inferred = DataSet(rows)
+
+    assert inferred.colmap['key'] is object
+    assert len(inferred.partition(lambda x: x.key)) == 2
 
 
 def test_partition_single_row_dataset():

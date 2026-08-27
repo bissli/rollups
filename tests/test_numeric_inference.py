@@ -663,20 +663,24 @@ class TestDataSetNumericStringScanning:
             rows, scan_limit=51, infer_numeric_strings=True)
         assert dict(columns)['val'] == int
 
-    def test_mixed_string_types_first_wins(self):
-        """Verify a later text value does not unseat an int column.
+    def test_mixed_numeric_and_text_strings_give_object(self):
+        """Verify a text value beside a numeric string gives object.
 
-        Read through guess_columns rather than a constructed DataSet:
-        the rows declare int and hold 'text', so building one raises
-        now - which would test conversion rather than inference.
+        `infer_numeric_strings` reads '123' as int, so the column holds
+        one int and one str - a cross-family mix no single type covers.
 
-        Mutation: `typ = row_typ` on every row rather than only while
-          typ is type(None), which lets 'text' win.
-        Oracle: the same rows without the trailing 'text' type int.
+        Mutation: infer_numeric_strings dropped on the way into
+          smart_type, which types '123' str and makes the column str.
+        Oracle: the same rows without the trailing 'text' type int, and
+          the pair of strings without the flag types str.
         """
         rows = [{'val': None}, {'val': '123'}, {'val': 'text'}]
         columns = DataSet.guess_columns(rows, infer_numeric_strings=True)
-        assert dict(columns)['val'] == int
+        assert dict(columns)['val'] is object
+
+        assert dict(DataSet.guess_columns(
+            rows[:2], infer_numeric_strings=True))['val'] is int
+        assert dict(DataSet.guess_columns(rows))['val'] is str
 
     def test_leading_zero_code_column_keeps_digits(self):
         """Verify a leading-zero code column stays str, digits intact.

@@ -355,20 +355,26 @@ def test_dedupe_float_keys():
 
 
 def test_dedupe_mixed_type_keys():
-    """Verify mixed int, float and str keys collapse under one type.
+    """Verify a key column no single type covers is not unified.
 
-    Mutation: dropping the seen-guard so the last row of the group wins,
-        which would surface value 'str'.
-    Oracle: hand-computed single row - 1, 1.0 and '1' all convert to
-        1.0, and the first row is kept.
+    The column holds int, float and str, so it infers `object` and
+    nothing converts. 1 and 1.0 still share a group by `==`; '1' does
+    not, because no conversion makes it numeric.
+
+    Mutation: dropping the seen-guard so the last row of a group wins,
+        which would surface value 'float' for the numeric key.
+    Oracle: hand-computed - two groups, each keeping its first row.
     """
     ds = DataSet([
         {'key': 1, 'value': 'int'},
         {'key': 1.0, 'value': 'float'},
         {'key': '1', 'value': 'str'}
     ])
+    assert ds.colmap['key'] is object
+
     result = ds.dedupe('key')
-    assert len(result) == 1
+    assert len(result) == 2
+    assert [row.value for row in result] == ['int', 'str']
     assert result[0] == {'key': 1.0, 'value': 'int'}
 
 
