@@ -1402,6 +1402,21 @@ class DataSet:
                 temporal.append((name, typ, DateTime, datetime.datetime, True))
             elif typ in TIME_TYPES:
                 temporal.append((name, typ, Time, TIME_VALUE_TYPES, True))
+            elif not isinstance(typ, type):
+                plain.append((name, typ))
+            # Notes:
+            # - A declared type the sets miss is still temporal where it
+            #   subclasses one. `pendulum.DateTime` is the one that
+            #   reaches here in practice, because inference reads it off
+            #   a pendulum value, and left plain it keeps a timezone
+            #   pendulum itself cannot read.
+            # - Datetime is tested before date, being a subclass of it.
+            elif issubclass(typ, datetime.datetime):
+                temporal.append((name, typ, DateTime, datetime.datetime, True))
+            elif issubclass(typ, datetime.date):
+                temporal.append((name, typ, Date, datetime.date, False))
+            elif issubclass(typ, datetime.time):
+                temporal.append((name, typ, Time, TIME_VALUE_TYPES, True))
             else:
                 plain.append((name, typ))
         plan = (names, plain, temporal)

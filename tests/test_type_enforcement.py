@@ -12,6 +12,7 @@ import random
 import zoneinfo
 
 import pandas as pd
+import pendulum
 import pytest
 from opendate import Date, DateTime, Time
 from rollups import ConversionError, DataSet, force_type, infer_numeric_type
@@ -1855,6 +1856,60 @@ def test_a_time_column_widens_a_value_built_from_a_plain_number():
     assert first.utcoffset() == datetime.timedelta(0)
     assert first == second
     assert (first.hour, first.minute) == (9, 0)
+
+
+def test_a_time_column_keeps_the_offset_a_string_spells_out():
+    """Verify a time column agrees on the instant however it was spelled.
+
+    The two spellings of one instant used to disagree: a stdlib
+    datetime.time carrying -04:00 kept its offset, while the equivalent
+    string was relabeled UTC and moved four hours. A csv column of
+    offset-bearing times is enough to reach it.
+
+    Mutation: an opendate whose Time.parse drops an offset the string
+        spells out and lets the UTC-preferring decorator stamp over it.
+    Oracle: the stdlib-typed spelling of the same instant, which the
+        string-typed one has to match on offset, wall clock, and value.
+    """
+    minus_four = datetime.timezone(datetime.timedelta(hours=-4))
+    spelled = DataSet([{'c': '08:01:27-04:00'}], columns=[('c', Time)])
+    handed = DataSet([{'c': datetime.time(8, 1, 27, tzinfo=minus_four)}],
+                     columns=[('c', Time)])
+
+    assert spelled[0]['c'].utcoffset() == datetime.timedelta(hours=-4)
+    assert spelled[0]['c'].utcoffset() == handed[0]['c'].utcoffset()
+    assert spelled[0]['c'] == handed[0]['c']
+
+    bare = DataSet([{'c': '08:01:27'}], columns=[('c', Time)])
+    assert bare[0]['c'].utcoffset() == datetime.timedelta(0)
+
+
+def test_a_temporal_column_typed_by_a_subclass_still_converts():
+    """Verify a declared type outside the known sets is still temporal.
+
+    Inference reads the type off the value, so a `pendulum.DateTime`
+    value yields a `pendulum.DateTime` column - a type neither
+    DATETIME_TYPES nor `.instance` knows. Left as a plain column it
+    converts nothing, so it keeps a timezone pendulum cannot read and
+    loses it on the next deep copy.
+
+    Mutation: dropping the issubclass fallback from _conversion_plan, so
+        such a column lands in `plain` and no conversion runs.
+    Oracle: the -4 hour offset the source value reports, read back after
+        a filter that deep copies, plus the opendate class the column
+        normalizes to.
+    """
+    source = pendulum.DateTime(2026, 8, 28, 8, 1, 27,
+                               tzinfo=zoneinfo.ZoneInfo('America/New_York'))
+    ds = DataSet([{'c': source}])
+
+    assert ds.colmap['c'] is pendulum.DateTime
+
+    out = ds.filter_data(lambda row: True, inplace=False)
+
+    assert type(out[0]['c']) is DateTime
+    assert out[0]['c'].utcoffset() == datetime.timedelta(hours=-4)
+    assert out[0]['c'] == source
 
 
 @pytest.mark.parametrize('typ', [DateTime, Time])
