@@ -17,11 +17,14 @@ C. Schema-only assignment: Document that direct assignment only updates
 
 Recommendation: Option A for consistency with existing helper methods.
 """
+import datetime
 import logging
 import operator
 import pickle
+import zoneinfo
 
 import pytest
+from opendate import DateTime
 from rollups import DataSet, find
 
 from libb import attrdict
@@ -1240,3 +1243,23 @@ def test_order_refuses_an_unhashable_column_value():
         x.order('k', 'b', ['x'])
 
     assert [row['id'] for row in x.container] == [1, 2]
+
+
+def test_sample_keeps_a_driver_timezone():
+    """Verify the deep copy sample returns does not strip an offset.
+
+    Mutation: an opendate that leaves a driver's zoneinfo.ZoneInfo on
+        the value, so the `deepcopy()` sample ends on rebuilds it from
+        pendulum's `.tz`, which answers None for a tzinfo pendulum does
+        not own.
+    Oracle: the -4 hour offset the source value reports, read off the
+        one sampled row, against the source instant.
+    """
+    source = datetime.datetime(2026, 8, 28, 8, 1, 27,
+                               tzinfo=zoneinfo.ZoneInfo('America/New_York'))
+    x = DataSet([{'c': source}], columns=[('c', DateTime)])
+
+    picked = x.sample(1)
+
+    assert picked[0]['c'].utcoffset() == datetime.timedelta(hours=-4)
+    assert picked[0]['c'] == source

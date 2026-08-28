@@ -5,10 +5,13 @@ Tests for enhanced type inference and validation across entry points:
 - append(): Optional immediate type validation
 - extend(): Optional immediate type validation
 """
+import copy
 import datetime
 import logging
 import random
+import zoneinfo
 
+import pandas as pd
 import pytest
 from opendate import Date, DateTime, Time
 from rollups import ConversionError, DataSet, force_type, infer_numeric_type
@@ -1747,6 +1750,136 @@ def test_a_date_column_carries_no_timezone():
     plain.ensure_types()
 
     assert not hasattr(plain[0]['c'], 'tzinfo')
+
+
+@pytest.mark.parametrize('as_opendate', [False, True])
+@pytest.mark.parametrize('tzinfo', [
+    zoneinfo.ZoneInfo('America/New_York'),
+    datetime.timezone(datetime.timedelta(hours=-4)),
+    ])
+def test_a_datetime_column_settles_a_timezone_it_did_not_build(tzinfo, as_opendate):
+    """Verify a driver's tzinfo is rebuilt as one pendulum reads.
+
+    A database driver hands back a plain zoneinfo.ZoneInfo or a fixed
+    datetime.timezone. pendulum answers `.timezone` for its own two
+    classes only, and rebuilds every derived value from it, so a column
+    left holding a driver's tzinfo comes back naive from a deepcopy and
+    shifted by its own offset from a subtract.
+
+    Mutation: an opendate that leaves a driver's tzinfo on the value
+        rather than rebuilding it at construction - the 0.1.44 behavior
+        this pins the dependency against.
+    Oracle: the -4 hour offset the source value reports, read back
+        after a deepcopy, plus 07:01 hand-computed for the hour before
+        08:01 in that zone.
+    """
+    source = datetime.datetime(2026, 8, 28, 8, 1, 27, tzinfo=tzinfo)
+    value = DateTime.instance(source) if as_opendate else source
+
+    ds = DataSet([{'c': value}], columns=[('c', DateTime)])
+    held = ds[0]['c']
+
+    assert held == source
+    assert held.utcoffset() == datetime.timedelta(hours=-4)
+    assert copy.deepcopy(held).utcoffset() == datetime.timedelta(hours=-4)
+    assert held.subtract(hours=1).hour == 7
+
+
+def test_a_datetime_column_settles_the_zone_an_offset_string_parses_to():
+    """Verify an ISO string carrying an offset lands on a pendulum zone.
+
+    `DateTime.parse` answers a stdlib datetime.timezone for any string
+    spelling an offset, `+00:00` included, so this needs no database to
+    reach - a csv column of offset-bearing timestamps is enough.
+
+    Mutation: widening unconditionally in _convert_value's datetime
+        string branch - `parsed.replace(tzinfo=UTC)` with no test of
+        what the string already carries - which relabels -04:00 as
+        +00:00 and moves the instant four hours.
+    Oracle: the -4 hour offset the string spells out, read back after a
+        deepcopy, plus 07:01 for the hour before 08:01.
+    """
+    ds = DataSet([{'c': '2026-08-28T08:01:27-04:00'}], columns=[('c', DateTime)])
+    held = ds[0]['c']
+
+    assert held.utcoffset() == datetime.timedelta(hours=-4)
+    assert copy.deepcopy(held).utcoffset() == datetime.timedelta(hours=-4)
+    assert held.subtract(hours=1).hour == 7
+
+
+def test_a_time_column_keeps_the_offset_it_arrived_with():
+    """Verify settling a time column's zone leaves the wall clock alone.
+
+    A `datetime.time` in a Time column is normalized by _convert_row's
+    own `target.instance(val)` branch, not by _convert_value, so that
+    is the line this aims at.
+
+    Mutation: `target.instance(val).replace(tzinfo=UTC)` in
+        _convert_row's temporal branch, which relabels 08:01-04:00 as
+        08:01+00:00 and moves the instant four hours.
+    Oracle: the -4 hour offset the source time reports, against 08:01:27
+        unmoved on the wall clock.
+    """
+    source = datetime.time(
+        8, 1, 27, tzinfo=datetime.timezone(datetime.timedelta(hours=-4)))
+
+    ds = DataSet([{'c': source}], columns=[('c', Time)])
+    held = ds[0]['c']
+
+    assert held.utcoffset() == datetime.timedelta(hours=-4)
+    assert (held.hour, held.minute, held.second) == (8, 1, 27)
+
+
+def test_a_time_column_widens_a_value_built_from_a_plain_number():
+    """Verify a scalar in a time column lands aware on the first pass.
+
+    A non-temporal, non-string value reaches the branch that builds the
+    time itself, and `Time(9)` is naive, so this is the one path where
+    the widening after `.instance` is what makes conversion a fixed
+    point - without it the first pass stores naive and a later full
+    pass quietly changes the value.
+
+    Mutation: `return Time.instance(typ(val))` at the tail of
+        _convert_value's time branch, dropping the widen, which leaves
+        the value naive until some later pass moves it.
+    Oracle: UTC on the first read, against the same value unmoved after
+        a second full conversion pass.
+    """
+    ds = DataSet([{'c': 9}], columns=[('c', Time)])
+    first = ds[0]['c']
+
+    ds.convert_container_types()
+    second = ds[0]['c']
+
+    assert first.tzinfo is not None
+    assert first.utcoffset() == datetime.timedelta(0)
+    assert first == second
+    assert (first.hour, first.minute) == (9, 0)
+
+
+@pytest.mark.parametrize('typ', [DateTime, Time])
+def test_a_missing_temporal_value_stays_none_through_add_column(typ):
+    """Verify a pandas NaT lands as None rather than raising.
+
+    `pd.NaT` is an instance of datetime.datetime, so it reaches the
+    branch that calls `.instance` - which answers None for a missing
+    value. Reading a timezone off that answer is how a None became an
+    AttributeError.
+
+    Mutation: reading `.tzinfo` off the `.instance` result without
+        testing it for None first, which raises AttributeError - and
+        not a ConversionError, so a caller catching ValueError as the
+        contract documents does not catch it.
+    Oracle: None itself, through add_column and through the container
+        pass, which have to agree.
+    """
+    added = DataSet([{'id': 1}], cols=['id'], typs=[int])
+    added.add_column('c', typ, values=[pd.NaT])
+
+    built = DataSet([{'c': pd.NaT}], columns=[('c', typ)])
+
+    assert added[0]['c'] is None
+    assert built[0]['c'] is None
 
 
 if __name__ == '__main__':

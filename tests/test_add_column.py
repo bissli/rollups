@@ -1,9 +1,10 @@
 import datetime
 import logging
 import math
+import zoneinfo
 
 import pytest
-from opendate import Date, DateTime, Time
+from opendate import UTC, Date, DateTime, Time
 from rollups import ConversionError, DataSet
 
 # --- Basic add_column Tests ---
@@ -138,8 +139,8 @@ def test_add_column_multiple_times():
     (float, math.pi),
     (str, 'hello'),
     (Date, Date(2024, 1, 15)),
-    (DateTime, DateTime(2024, 1, 15, 10, 30)),
-    (Time, Time(10, 30, 0)),
+    (DateTime, DateTime(2024, 1, 15, 10, 30, tzinfo=UTC)),
+    (Time, Time(10, 30, 0, tzinfo=UTC)),
     (bool, True),
 ])
 def test_add_column_preserves_type(col_type, test_value):
@@ -922,3 +923,48 @@ def test_add_column_truncates_a_datetime_in_a_date_column():
     assert type(ds[0]['day']) is Date
     assert ds[0]['day'] == Date(2024, 3, 1)
     assert type(ds[0]['plain']) is Date
+
+
+def test_add_column_settles_the_timezone_of_what_it_writes():
+    """Verify a column added by hand holds what every other entry holds.
+
+    `add_column` writes per row through `_convert_value`, never through
+    the row pass, so it is the one entry point that can leave a value
+    the rest of the column would never carry.
+
+    Mutation: `return DateTime.instance(val)` or
+        `return Time.instance(val)` in _convert_value's temporal
+        branches, which answer a value already of the target class
+        unchanged - naive included - so a naive value stands alone in
+        an aware column; or widening either one unconditionally, which
+        relabels the -04:00 rows as +00:00.
+    Oracle: the constructor's own reading of the same five values,
+        which the added column has to match by offset and by tzinfo
+        class.
+    """
+    minus_four = datetime.timezone(datetime.timedelta(hours=-4))
+    driver = datetime.datetime(2026, 8, 28, 8, 1, 27,
+                               tzinfo=zoneinfo.ZoneInfo('America/New_York'))
+    written = {
+        'a': (DateTime, DateTime(2026, 8, 28, 8, 1, 27)),
+        'b': (DateTime, driver),
+        'c': (DateTime, '2026-08-28T08:01:27-04:00'),
+        'd': (Time, Time(8, 1, 27)),
+        'e': (Time, datetime.time(8, 1, 27, tzinfo=minus_four)),
+        }
+
+    built = DataSet([{name: value for name, (_, value) in written.items()}],
+                    columns=[(name, typ) for name, (typ, _) in written.items()])
+    added = DataSet([{'id': 1}], cols=['id'], typs=[int])
+    for name, (typ, value) in written.items():
+        added.add_column(name, typ, value=value)
+
+    for name in written:
+        assert added[0][name] == built[0][name]
+        assert added[0][name].utcoffset() == built[0][name].utcoffset()
+        assert type(added[0][name].tzinfo) is type(built[0][name].tzinfo)
+
+    assert added[0]['a'].utcoffset() == datetime.timedelta(0)
+    assert added[0]['b'].utcoffset() == datetime.timedelta(hours=-4)
+    assert added[0]['d'].utcoffset() == datetime.timedelta(0)
+    assert added[0]['e'].utcoffset() == datetime.timedelta(hours=-4)

@@ -1,3 +1,6 @@
+import datetime
+import zoneinfo
+
 import pytest
 from opendate import UTC, Date, DateTime, Time
 from rollups import DataSet
@@ -842,6 +845,28 @@ def test_deepcopy_summary_is_independent_of_the_source():
     ds[0]['value'] = 10
     assert deep.summary['value'] == 300
     assert ds.summary['value'] == 210
+
+
+def test_every_copy_depth_keeps_a_driver_timezone():
+    """Verify no copy depth strips a datetime's offset.
+
+    Only `deepcopy` copies the values, so only it can lose one; the
+    other two are here because a fix that repaired the copy rather than
+    the value would leave them behind.
+
+    Mutation: an opendate that leaves a driver's zoneinfo.ZoneInfo on
+        the value, so `copy.deepcopy` rebuilds it from pendulum's `.tz`,
+        which answers None for a tzinfo pendulum does not own.
+    Oracle: the -4 hour offset the source value reports, read off each
+        of the three copies, against the source instant.
+    """
+    source = datetime.datetime(2026, 8, 28, 8, 1, 27,
+                               tzinfo=zoneinfo.ZoneInfo('America/New_York'))
+    ds = DataSet([{'c': source}], columns=[('c', DateTime)])
+
+    for made in (ds.deepcopy(), ds.shallowcopy(), ds.copy()):
+        assert made[0]['c'].utcoffset() == datetime.timedelta(hours=-4)
+        assert made[0]['c'] == source
 
 
 if __name__ == '__main__':

@@ -231,17 +231,27 @@ def _convert_value(val, typ, name=None):
         return val
     if typ in DATETIME_TYPES:
         if isinstance(val, datetime.date):
-            return DateTime.instance(val)
+            # Notes:
+            # - `.instance` answers a value already of the target class
+            #   unchanged, naive included, so widen after it rather than
+            #   trusting it - this is the path `add_column` writes
+            #   through, and the only one that would otherwise leave a
+            #   naive value alone in an aware column.
+            # - It answers None for a missing value, `pd.NaT` included,
+            #   and `pd.NaT` is an instance of datetime.datetime, so it
+            #   reaches here rather than the fallback below.
+            instanced = DateTime.instance(val)
+            if instanced is not None and instanced.tzinfo is None:
+                return instanced.replace(tzinfo=UTC)
+            return instanced
         if isinstance(val, str):
             parsed = (DateTime.parse(val) if is_dynamic_date_code(val)
                       else _cached_datetime_parse(val))
             if parsed is None:
                 raise _conversion_error(val, typ, name)
-            # A dynamic code resolves to a naive value where an ISO
-            # string parses to UTC. Widen, or one column holds both and
-            # a plain `<` between two of its rows raises TypeError.
-            # `.instance` cannot do it: handed a value already of the
-            # target class it answers it unchanged, timezone and all.
+            # A dynamic date code resolves to a naive value where an ISO
+            # string parses aware. Widen, or one column holds both and a
+            # plain `<` between two of its rows raises TypeError.
             return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     if typ in DATE_TYPES:
         if isinstance(val, datetime.date):
@@ -254,7 +264,12 @@ def _convert_value(val, typ, name=None):
             return parsed
     if typ in TIME_TYPES:
         if isinstance(val, TIME_VALUE_TYPES):
-            return Time.instance(val)
+            # `.instance` answers None for a missing value; see the
+            # datetime branch above.
+            instanced = Time.instance(val)
+            if instanced is not None and instanced.tzinfo is None:
+                return instanced.replace(tzinfo=UTC)
+            return instanced
         if isinstance(val, str):
             parsed = Time.parse(val)
             if parsed is None:
@@ -265,9 +280,10 @@ def _convert_value(val, typ, name=None):
         # point: a row converts on append and again on the next full
         # pass, and a value that changes class between the two drifts.
         try:
-            return Time.instance(typ(val))
+            converted = Time.instance(typ(val))
         except Exception as exc:
             raise _conversion_error(val, typ, name) from exc
+        return converted if converted.tzinfo else converted.replace(tzinfo=UTC)
     if typ in NUMERIC_TYPES:
         # numify answers None for a value it will not take, so failure
         # arrives as a return rather than as an exception.

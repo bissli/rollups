@@ -30,7 +30,9 @@ Key Differences from join()
 - meld_datasets: Fast, position-based, assumes aligned rows
 - join(): Slower, key-based matching, handles unaligned data
 """
+import datetime
 import math
+import zoneinfo
 
 import pytest
 from opendate import UTC, Date, DateTime, Time
@@ -831,6 +833,32 @@ def test_meld_with_boolean_values():
     assert result.colmap['test_flag'] is bool
     assert result[0]['test_flag'] is False
     assert result[1]['test_flag'] is True
+
+
+def test_meld_out_of_place_keeps_a_driver_timezone():
+    """Verify the out-of-place meld does not strip a datetime's offset.
+
+    Both sides are covered: the meldee's own column, which crosses in
+    the `deepcopy()` meld works on, and the melder's, which is read out
+    of a dataset that never gets copied.
+
+    Mutation: an opendate that leaves a driver's zoneinfo.ZoneInfo on
+        the value, so the `deepcopy()` meld starts from rebuilds it from
+        pendulum's `.tz`, which answers None for a tzinfo pendulum does
+        not own.
+    Oracle: the -4 hour offset the source value reports, read off both
+        columns of the result, against the source instant.
+    """
+    source = datetime.datetime(2026, 8, 28, 8, 1, 27,
+                               tzinfo=zoneinfo.ZoneInfo('America/New_York'))
+    base = DataSet([{'c': source}], columns=[('c', DateTime)])
+    melder = DataSet([{'c': source}], columns=[('c', DateTime)])
+
+    result = meld_datasets(base, [melder], ['test'], [['c']], inplace=False)
+
+    for name in ('c', 'test_c'):
+        assert result[0][name].utcoffset() == datetime.timedelta(hours=-4)
+        assert result[0][name] == source
 
 
 if __name__ == '__main__':

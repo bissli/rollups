@@ -1,5 +1,7 @@
+import datetime
 import logging
 import re
+import zoneinfo
 
 import pytest
 from opendate import UTC, Date, DateTime
@@ -714,6 +716,33 @@ def test_filter_not_inplace_copy_needs_no_reconversion():
 
     assert [row['id'] for row in filtered] == [1]
     assert conversions == []
+
+
+def test_filter_out_of_place_keeps_a_driver_timezone():
+    """Verify the out-of-place copy does not strip a datetime's offset.
+
+    Both routes out of place are covered: the predicate one, which deep
+    copies the rows it kept, and the None one, which hands the whole
+    dataset to `deepcopy()`.
+
+    Mutation: an opendate that leaves a driver's zoneinfo.ZoneInfo on
+        the value, so `copy.deepcopy` rebuilds it from pendulum's `.tz`,
+        which answers None for a tzinfo pendulum does not own. This is
+        the reported defect, and this test is what closes it.
+    Oracle: the -4 hour offset the source value reports, read off each
+        copy, against the source instant.
+    """
+    source = datetime.datetime(2026, 8, 28, 8, 1, 27,
+                               tzinfo=zoneinfo.ZoneInfo('America/New_York'))
+    ds = DataSet([{'c': source, 'keep': True}],
+                 columns=[('c', DateTime), ('keep', bool)])
+
+    matched = ds.filter_data(lambda row: row['keep'], inplace=False)
+    passed = ds.filter_data(None, inplace=False)
+
+    for out in (matched, passed):
+        assert out[0]['c'].utcoffset() == datetime.timedelta(hours=-4)
+        assert out[0]['c'] == source
 
 
 if __name__ == '__main__':
