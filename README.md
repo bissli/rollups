@@ -74,9 +74,10 @@ DataSet(records)                             # types inferred from the rows
 DataSet(records, infer_numeric_strings=True)   # '120.5' infers as float
 ```
 
-Conversion is lazy: nothing converts at construction, and the first read
-of any row converts the whole container. Any class taking one argument
-serves as a column type.
+Values convert as they enter - at construction, and on `append` and
+`extend` - so a value that does not match its column raises at the line
+that built the dataset rather than at some later reader. Any class
+taking one argument serves as a column type.
 
 [Getting started](docs/getting-started.md) covers the type system, the
 column operations, and the three kinds of copy.
