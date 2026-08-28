@@ -2,3 +2,4 @@
 poetry.lock
 bench/
 bench.json
+BUGREPORT-*.md
