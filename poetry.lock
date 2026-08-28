@@ -569,41 +569,41 @@ files = [
 
 [[package]]
 name = "opendate"
-version = "0.1.45"
+version = "0.1.46"
 description = "Python business datetimes"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "opendate-0.1.45-cp310-cp310-macosx_10_12_x86_64.whl", hash = "sha256:545e480c04fb06df3e4ffad2ab19a17c0a40c6bc88769d88ec003c7310091691"},
-    {file = "opendate-0.1.45-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:20c3a1084aaa96ff649a2a066154d51bbcb3961efdc7e930929afd2603527a33"},
-    {file = "opendate-0.1.45-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:74a43504e3773c80d5d297e34adc6d2b0c2f7dafcce3b45756592b0cd1f76ff0"},
-    {file = "opendate-0.1.45-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:1ba1efe70b348007f67eee6c9defc29c1db77eb70715bc1be34d0c0c3a79d3a1"},
-    {file = "opendate-0.1.45-cp310-cp310-musllinux_1_1_aarch64.whl", hash = "sha256:7385b701e21eb19bbcf71a6876b0073a451a1d2591e585d3cd7c9e6ebdfeeef8"},
-    {file = "opendate-0.1.45-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:2b60aaee1b82355a835803917b6a69625a9555d09e0b708338177d897653728a"},
-    {file = "opendate-0.1.45-cp310-cp310-win_amd64.whl", hash = "sha256:5c2c685547dd6c480ca6f0d648088101c7dcb63017610f7d085228565b05e7cd"},
-    {file = "opendate-0.1.45-cp311-cp311-macosx_10_12_x86_64.whl", hash = "sha256:8f4760e420640fccd1f5e57046ee4e50217dd6fdc49fa7b21341482bf185d88a"},
-    {file = "opendate-0.1.45-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:ae500f9e72e52d603340839282c2598b056c17de447da0dfd6d5df23aa8e8fa2"},
-    {file = "opendate-0.1.45-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ec6d10975523ea8aa19da66d8132673f305d183bd5bb5c17e6ca4f42146e76cd"},
-    {file = "opendate-0.1.45-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8f0122c792727fe176be26e3f62044bf608e9ec565c56ed4311032b79a1befbd"},
-    {file = "opendate-0.1.45-cp311-cp311-musllinux_1_1_aarch64.whl", hash = "sha256:1372bfda3dda8c16c10ea670b61c80c331e9c354edcd6b06efbfda390e6a9713"},
-    {file = "opendate-0.1.45-cp311-cp311-musllinux_1_1_x86_64.whl", hash = "sha256:51e30b729ef9e0284f2e51e970a30a1923c5b5c295d548bc47e8798022199df0"},
-    {file = "opendate-0.1.45-cp311-cp311-win_amd64.whl", hash = "sha256:dec018778cfaae4c70ecd4cee7d95f3c49249503e713d81454931a169b8f0ebf"},
-    {file = "opendate-0.1.45-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:926a13962670888c2120976e291da4c022851a00cd71c273231d5634cb7c5db5"},
-    {file = "opendate-0.1.45-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:9f9cf1cc59858d4f6172b66f2a017c8e76428d3d142f3d301ad6d35115e27513"},
-    {file = "opendate-0.1.45-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:8bacbd1ba066900230cf5de815993f1663060d75edcaed0df7a205ea6e3519a3"},
-    {file = "opendate-0.1.45-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:438f0b4e66e19088345a2d8ff028768684680e6de7d9b02c6aeb14fbbe9bed4e"},
-    {file = "opendate-0.1.45-cp312-cp312-musllinux_1_1_aarch64.whl", hash = "sha256:23a5da8bda6ca68934fa1bdb82890acf504899e430b4e76541f8e92b04642770"},
-    {file = "opendate-0.1.45-cp312-cp312-musllinux_1_1_x86_64.whl", hash = "sha256:a6c6df68f5a1a3d0b6f52f85fe176727e55d535cb1b27aff96fdf66a34416350"},
-    {file = "opendate-0.1.45-cp312-cp312-win_amd64.whl", hash = "sha256:b17ff5bdd63ba1d42ea0f47db30d84c69560b481897c7ece43ddbfc5ed4c8fcc"},
-    {file = "opendate-0.1.45-cp313-cp313-macosx_10_12_x86_64.whl", hash = "sha256:c72da9792498b7078a319ad886a78a4a61ce39be9d29397fd4fea4be000c004b"},
-    {file = "opendate-0.1.45-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:5a50359f1a8f53da6070014c177f73c3c5c5c59e25e1cbb3908c568457e01c63"},
-    {file = "opendate-0.1.45-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e70831f7dd85dee7e5eb41e4cf06174eac1f3a00853f31a628cfd1fd9a29196b"},
-    {file = "opendate-0.1.45-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:89020a9f002af524214172e79521660f9c40a083031e203661770aee7085e683"},
-    {file = "opendate-0.1.45-cp313-cp313-musllinux_1_1_aarch64.whl", hash = "sha256:eca180f3b6d74bfc9bc513cb75e040f4de74ec0176b3d1a14f28ad72d365705e"},
-    {file = "opendate-0.1.45-cp313-cp313-musllinux_1_1_x86_64.whl", hash = "sha256:b01446b9af7427751b7389e1426e9491d5e385f29be48549a396f1e43b6ea932"},
-    {file = "opendate-0.1.45-cp313-cp313-win_amd64.whl", hash = "sha256:a7bc3ec94597977b58582bbfa5bf73a5b4323a636f34d856f5f833a1826aa282"},
-    {file = "opendate-0.1.45.tar.gz", hash = "sha256:9687e15fdff7f301ab67d8f884be1f666da282cbb39cde28b45b80712dd78d26"},
+    {file = "opendate-0.1.46-cp310-cp310-macosx_10_12_x86_64.whl", hash = "sha256:4b53d60d6df2dfdc103a3be8c825f5371b30b6d600e810b312050cb866158171"},
+    {file = "opendate-0.1.46-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:13d458b8349b9338ef22eaaf16e485b825afb23e84b96d31bbf4ecedea69e244"},
+    {file = "opendate-0.1.46-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:9639b3cdf60abde9a169ffdcaeee3a0f917f5941905b5867df4f9815c7de7086"},
+    {file = "opendate-0.1.46-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:844fdeed5af3fd4ee6a587e8c35055643fc5d56b54033cc1f7e2c46eef241b88"},
+    {file = "opendate-0.1.46-cp310-cp310-musllinux_1_1_aarch64.whl", hash = "sha256:7ee87dc28dbb9b195a5ecc7c8480128f62e2e3b7e98fbe139f3f39ecff9d6b49"},
+    {file = "opendate-0.1.46-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:5dccc23dcf092ff025934c49def2339fe3c0dd58a7f757a9154c0a49da9c9261"},
+    {file = "opendate-0.1.46-cp310-cp310-win_amd64.whl", hash = "sha256:2e8bc2237a82996b58a8cae32e141ec0f1eb6369261c88592dccb9165a2ed36d"},
+    {file = "opendate-0.1.46-cp311-cp311-macosx_10_12_x86_64.whl", hash = "sha256:8e0941fc492401a6705a7f53b9ec2ad8789a63925bffb1cc8eb1c21b52321c5f"},
+    {file = "opendate-0.1.46-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:2fa16ce620ed0a8c0054e569cf492fd71faf4fb484f5e8f2a432738a67d05ba2"},
+    {file = "opendate-0.1.46-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:a06970ed340bd5c3ff7003d9b00c3557c21b86b3ed597c960082d0d6f317e842"},
+    {file = "opendate-0.1.46-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:bfe40081b8758ed6270da582a8e82ebbba6e7704457671ca229904cb0e28b1d3"},
+    {file = "opendate-0.1.46-cp311-cp311-musllinux_1_1_aarch64.whl", hash = "sha256:7d8ea777b600f296210843b6bbfebd962524193ce818a64f761ec58929b5964c"},
+    {file = "opendate-0.1.46-cp311-cp311-musllinux_1_1_x86_64.whl", hash = "sha256:fd3ae7325a196655bce8f951259ca3ab6f82fbd13cdce9ca57211a9661afab4a"},
+    {file = "opendate-0.1.46-cp311-cp311-win_amd64.whl", hash = "sha256:176d82474f24ba323a62d2da2291b9cdede58557313d52ca92c802aa0d786707"},
+    {file = "opendate-0.1.46-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:adc6294f6b7c97c69badb458934a13630b7460f8a00d6e7ef118be3ec9cfeeb5"},
+    {file = "opendate-0.1.46-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:54f7985c0925f832218055ca5c59fe19a4a762c2c93dcfb1c5e95507ab936005"},
+    {file = "opendate-0.1.46-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:9f39e8c231749a3a313c0d4ead01c5fdad164985a0b14580ca436bde3fa18bdb"},
+    {file = "opendate-0.1.46-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:5d16d9a30cd9f36fed37fd3867c6ca990fd5e473afcfaf38e30007e6005b36f4"},
+    {file = "opendate-0.1.46-cp312-cp312-musllinux_1_1_aarch64.whl", hash = "sha256:4f0dfdf781e46232dfc1abcda958a2d570b19dc8050f7238c7c9dfa074f88cd9"},
+    {file = "opendate-0.1.46-cp312-cp312-musllinux_1_1_x86_64.whl", hash = "sha256:4ad6fa8ad28a1f88db7d5160b5f4a88e79f82b4e391b582d26fa28766a0cdfb6"},
+    {file = "opendate-0.1.46-cp312-cp312-win_amd64.whl", hash = "sha256:6342e9ff8000b17908dc4c2cee0bad30728ca332bbc94ab780efabcb600a546e"},
+    {file = "opendate-0.1.46-cp313-cp313-macosx_10_12_x86_64.whl", hash = "sha256:70e7c45481a5d2c87bf90366021a3266d0315ed0aaf80593ee88c80247d1e3b1"},
+    {file = "opendate-0.1.46-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:90f48c13b64f870e24570f15bfb7a3863ce20869b93f7f55f9b3fbec1124b824"},
+    {file = "opendate-0.1.46-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:a788825d69dddb4682d5028ee88ad566062535eb386cacabfa1b862abb6ebde5"},
+    {file = "opendate-0.1.46-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:cbba9a3d8e8a6cfc9407d24e57c0d3d9448419517ee88747ac954ba0823aed9c"},
+    {file = "opendate-0.1.46-cp313-cp313-musllinux_1_1_aarch64.whl", hash = "sha256:efe39886fd4d497b679675f08d4a12d9722ae566b36fd4559354a8c02f60f5ff"},
+    {file = "opendate-0.1.46-cp313-cp313-musllinux_1_1_x86_64.whl", hash = "sha256:dc9d3439b7015b2628331846dfdccbf9226d44c661ac5536e257c136cbba7d30"},
+    {file = "opendate-0.1.46-cp313-cp313-win_amd64.whl", hash = "sha256:e615358be9e3db4cfdd55b795e6863853b83311bd9d1de3734f297df5dc8d9a1"},
+    {file = "opendate-0.1.46.tar.gz", hash = "sha256:689bb4dbe964efdf1c13db832be79b92f6baef6b450ec355163cdbd177466367"},
 ]
 
 [package.dependencies]
@@ -1297,4 +1297,4 @@ test = ["pytest"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<4.0"
-content-hash = "4ea98ff832ecbef18684ad6f71cba9a959c6a96384d9102758847ada60d1ffc7"
+content-hash = "ed9d17646d39586cf55dd93c23c1a9d461ef0f9147acb2022af2d39ec6cc2289"
