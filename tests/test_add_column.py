@@ -838,9 +838,9 @@ if __name__ == '__main__':
 def test_add_column_fills_a_column_named_after_a_dict_method():
     """Verify a new column named 'items' fills with None, not a method.
 
-    Mutation: reading the existing value through the row's own get(),
-        which answers a missing key with the dict attribute of that
-        name, so the row gains a bound method as data.
+    Mutation: reading the existing value through the row's own get()
+        while the mapping it derives from lets a method name answer as a
+        key, so the row gains a bound method as data.
     Oracle: hand-computed - no row carries 'items', so every row holds
         None under it.
     """

@@ -147,9 +147,9 @@ def join_datasets(adataset: 'DataSet', akey: tuple[str],
     merge_plan = [(k, asource.get(k, ABSENT), bsource.get(k, ABSENT))
                   for k in set(akeys + bkeys)]
 
-    # A row is a lazydict, whose get() is written in Python and answers
-    # a missing key with an attribute of the same name. A merged row
-    # wants the column or nothing, so read through the dict method.
+    # A merged row wants the column or nothing, and every name in the
+    # plan is a column, so read through the dict method rather than the
+    # row's own get(), which is written in Python.
     read = dict.get
 
     def merge_rows(arow, brow):

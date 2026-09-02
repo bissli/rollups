@@ -87,8 +87,8 @@ def test_json_converts_declared_types_first():
 def test_json_writes_null_for_a_column_the_row_does_not_carry():
     """Verify a declared column absent from a row serializes as null.
 
-    Mutation: reading the row through its own get(), which answers a
-        missing key with the dict attribute of that name, so a column
+    Mutation: reading the row through its own get() while the mapping it
+        derives from lets a method name answer as a key, so a column
         named after one reaches the encoder as a bound method.
     Oracle: hand-written json text; the encoder refuses a bound method
         outright, so the wrong reader cannot even produce output.

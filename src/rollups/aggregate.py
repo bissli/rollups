@@ -74,9 +74,8 @@ def bucket_dataset(dataset: 'DataSet', keycols: str | list[str],
         Notes
         -----
         - Reads through the dict method rather than the row's own
-          `get`, which is written in Python and answers a missing key
-          with the attribute of that name, so a column named after one
-          would aggregate a bound method.
+          `get`, which is written in Python. This runs once per row per
+          aggregated column, where the row's own lookup buys nothing.
         """
         values = (dict.get(row, col) for row in iterdict)
         return [val for val in values if val is not None] or [None]

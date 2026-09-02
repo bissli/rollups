@@ -1159,11 +1159,11 @@ def test_join_keeps_a_column_named_none():
 def test_join_reads_a_missing_column_as_none_not_a_dict_method():
     """Verify a column a row lacks joins as None, whatever it is named.
 
-    Mutation: reading the row through its own get(), which answers a
-        missing key with the dict attribute of that name, so a column
+    Mutation: reading the row through its own get() while the mapping it
+        derives from lets a method name answer as a key, so a column
         named after one lands a bound method in the joined row.
     Oracle: hand-computed - neither side carries 'items', so it joins
-        as None rather than as the dict method of that name.
+        as None rather than as the method of that name.
     """
     a = DataSet([{'k': 1, 'x': 'left'}])
     b = DataSet([{'k': 1, 'y': 'right'}])

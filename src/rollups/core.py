@@ -1333,11 +1333,10 @@ class DataSet:
           type.
         """
         names, plain, temporal = plan
-        # Read through the dict method. A row is a lazydict, whose
-        # __getitem__ is a Python-level override with an attribute
-        # fallback; going through it costs more than the conversion
-        # itself on a column that needs none. The loop below leaves
-        # every declared name present, so the fallback is never wanted.
+        # Read through the dict method. A row's own __getitem__ is a
+        # Python-level override, and going through it costs more than the
+        # conversion itself on a column that needs none. The loop below
+        # leaves every declared name present, so this never misses.
         read = dict.__getitem__
         for name in names:
             if name not in row:

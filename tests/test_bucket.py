@@ -1830,8 +1830,8 @@ def test_bucket_dataset_is_reachable_standalone_and_matches_the_method():
 def test_bucket_counts_no_value_for_a_column_no_row_carries():
     """Verify an aggregated column absent from every row holds nothing.
 
-    Mutation: reading each row through its own get(), which answers a
-        missing key with the dict attribute of that name, so every row
+    Mutation: reading each row through its own get() while the mapping
+        it derives from lets a method name answer as a key, so every row
         contributes a bound method and the group looks populated.
     Oracle: hand-computed - two rows carry no column called 'values',
         so len() over the group sees the one-item fallback, not two.

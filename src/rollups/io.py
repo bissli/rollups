@@ -293,8 +293,8 @@ def read_json_value(row, col, _typ):
     Notes
     -----
     - Reads through the dict method rather than the row's own `get`,
-      which is written in Python and answers a missing key with the
-      attribute of that name.
+      which is written in Python. Every name this is called with is a
+      declared column, so the row's own lookup buys nothing.
     """
     return dict.get(row, col)
 
