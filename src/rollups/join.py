@@ -93,7 +93,9 @@ def join_datasets(adataset: 'DataSet', akey: tuple[str],
 
     adict, bdict = {}, {}
     if None in akey:
-        adict[(None,)] = adataset.container
+        # `first` pops the bucket it walks, and this
+        # one would be the caller's own list.
+        adict[(None,)] = list(adataset.container)
     else:
         for row in adataset:
             thiskey = tuple(row[_] for _ in akey)
@@ -102,7 +104,7 @@ def join_datasets(adataset: 'DataSet', akey: tuple[str],
             adict[thiskey].append(row)
 
     if None in bkey:
-        bdict[(None,)] = bdataset.container
+        bdict[(None,)] = list(bdataset.container)
     else:
         for row in bdataset:
             thiskey = tuple(row[_] for _ in bkey)

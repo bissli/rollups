@@ -1171,3 +1171,21 @@ def test_join_reads_a_missing_column_as_none_not_a_dict_method():
     joined = DataSet.join(a, ('k',), b, ('k',), acol=['k', 'x', 'items'])
 
     assert joined[0]['items'] is None
+
+
+def test_join_with_a_none_key_leaves_both_inputs_intact():
+    """Verify a cross join does not consume the datasets it reads.
+
+    Mutation: bucketing a None key as `adataset.container` itself rather
+        than a copy of it, so the `first` branch pops the caller's own
+        rows and empties the dataset.
+    Oracle: both inputs still hold the rows they were built with, 2 and
+        1, against the 1 and 0 that popping the live container leaves.
+    """
+    a = DataSet([{'x': 1}, {'x': 2}], columns=[('x', int)])
+    b = DataSet([{'y': 9}], columns=[('y', int)])
+
+    DataSet.join(a, None, b, None, first=True)
+
+    assert [row['x'] for row in a.container] == [1, 2]
+    assert [row['y'] for row in b.container] == [9]
