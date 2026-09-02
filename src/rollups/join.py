@@ -18,6 +18,51 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_NAN_KEY = object()
+
+
+def _keyed(val):
+    """Answer the value a row key groups on, with a NaN given a token.
+    """
+    if isinstance(val, tuple):
+        return tuple(_keyed(item) for item in val)
+    return _NAN_KEY if isinstance(val, float) and val != val else val  # noqa: PLR0124
+
+
+def _key_order(key):
+    """Answer a sort key for a keyed row, ordering None then NaN last.
+
+    Notes
+    -----
+    - Ranks rather than compares, since neither None nor a NaN orders
+      against a number.
+    """
+    items = key if isinstance(key, tuple) else (key,)
+    order = []
+    for item in items:
+        if item is None:
+            order.append((1, None))
+        elif item is _NAN_KEY:
+            order.append((2, None))
+        else:
+            order.append((0, item))
+    return tuple(order)
+
+
+def _shown(key):
+    """Answer a row key with its NaN token rendered readably.
+    """
+    shown = []
+    for item in key:
+        if item is _NAN_KEY:
+            shown.append('nan')
+        elif isinstance(item, tuple):
+            shown.append(_shown(item))
+        else:
+            shown.append(item)
+    return tuple(shown)
+
+
 # Marks a merged column one side does not carry, so a column genuinely
 # named None is still read from the side that has it.
 ABSENT = object()
@@ -45,8 +90,9 @@ def join_datasets(adataset: 'DataSet', akey: tuple[str],
         One of 'inner', 'outer', 'left', 'right'.
     amod, bmod : str, default ''
         Suffix appended to each side's column names.
-    acol, bcol : list of str or None, default None
-        Columns to carry over from each side. None takes all.
+    acol, bcol : str or list of str or None, default None
+        Columns to carry over from each side. A bare string names one
+        column. None takes all.
     first : bool, default False
         Pair rows sequentially instead of taking the cartesian
         product. This DROPS rows where a key repeats.
@@ -83,8 +129,12 @@ def join_datasets(adataset: 'DataSet', akey: tuple[str],
     bdataset.ensure_types()
     if acol is None:
         acol = adataset.cols
+    elif isinstance(acol, str):
+        acol = [acol]
     if bcol is None:
         bcol = bdataset.cols
+    elif isinstance(bcol, str):
+        bcol = [bcol]
 
     if not isinstance(akey, tuple | list):
         akey = (akey,)
@@ -98,7 +148,7 @@ def join_datasets(adataset: 'DataSet', akey: tuple[str],
         adict[(None,)] = list(adataset.container)
     else:
         for row in adataset:
-            thiskey = tuple(row[_] for _ in akey)
+            thiskey = tuple(_keyed(row[_]) for _ in akey)
             if thiskey not in adict:
                 adict[thiskey] = []
             adict[thiskey].append(row)
@@ -107,7 +157,7 @@ def join_datasets(adataset: 'DataSet', akey: tuple[str],
         bdict[(None,)] = list(bdataset.container)
     else:
         for row in bdataset:
-            thiskey = tuple(row[_] for _ in bkey)
+            thiskey = tuple(_keyed(row[_]) for _ in bkey)
             if thiskey not in bdict:
                 bdict[thiskey] = []
             bdict[thiskey].append(row)
@@ -181,15 +231,15 @@ def join_datasets(adataset: 'DataSet', akey: tuple[str],
 
                 if jointype == 'inner':
                     if arows or brows:
-                        logger.warning(f'Dropped rows for key {str(jkey)}')
+                        logger.warning(f'Dropped rows for key {_shown(jkey)}')
                     break
                 if jointype == 'left' and not arows:
                     if brows:
-                        logger.warning(f'Dropped brows for key {str(jkey)}')
+                        logger.warning(f'Dropped brows for key {_shown(jkey)}')
                     break
                 if jointype == 'right' and not brows:
                     if arows:
-                        logger.warning(f'Dropped arows for key {str(jkey)}')
+                        logger.warning(f'Dropped arows for key {_shown(jkey)}')
                     break
 
     return joined
@@ -227,16 +277,16 @@ def diff_datasets(ds1, ds2, keycols, comparecols):
     - A diff row carries only the key and comparison columns; same and
       only rows keep every column from their source.
     """
-    key_fn = lambda row: tuple(row[col] for col in keycols)
+    key_fn = lambda row: tuple(_keyed(row[col]) for col in keycols)
     ds1_map = {key_fn(row): row for row in ds1}
     ds2_map = {key_fn(row): row for row in ds2}
 
     same, diff, only_in_ds1 = [], [], []
-    for key in sorted(ds1_map):
+    for key in sorted(ds1_map, key=_key_order):
         ds1_row = ds1_map[key]
         ds2_row = ds2_map.pop(key, None)
         if ds2_row is not None:
-            diff_row = lazydict(zip(keycols, key))
+            diff_row = lazydict((col, ds1_row[col]) for col in keycols)
             for col in comparecols:
                 if ds1_row[col] != ds2_row[col]:
                     diff_row[col] = (ds1_row[col], ds2_row[col])
@@ -276,7 +326,8 @@ def meld_datasets(meldee, melders, melder_ids, columns, inplace=True):
     Raises
     ------
     ValueError
-        If a melder's row count differs from the meldee's.
+        If `melders`, `melder_ids` and `columns` are not the same
+        length, or if a melder's row count differs from the meldee's.
 
     Notes
     -----
@@ -284,9 +335,16 @@ def meld_datasets(meldee, melders, melder_ids, columns, inplace=True):
       hold the same rows in the same order.
     - A merged column is named `{prefix}_{col}`.
     """
+    melders, melder_ids, columns = list(melders), list(melder_ids), list(columns)
+    if not len(melders) == len(melder_ids) == len(columns):
+        raise ValueError(
+            f'melders, melder_ids and columns must be the same length: '
+            f'{len(melders)}, {len(melder_ids)}, {len(columns)}')
+
     result = meldee if inplace else meldee.deepcopy()
 
     for dataset, prefix, cols in zip(melders, melder_ids, columns):
+        cols = [cols] if isinstance(cols, str) else cols
         if len(result) != len(dataset):
             raise ValueError(f'Length mismatch: {len(dataset)} != {len(result)}')
 

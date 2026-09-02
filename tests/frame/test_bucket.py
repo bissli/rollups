@@ -283,24 +283,32 @@ def test_bucket_dataframe_merges_collections_an_op_cannot_add():
     assert frame['l'].tolist() == [[1, 2, 3]]
 
 
-def test_bucket_dataframe_repeated_alias_keeps_the_last_value_in_place(
+def test_bucket_dataframe_repeated_alias_raises_as_bucket_does(
         df_two_groups):
-    """Verify a repeated un-aliased aggregation overwrites, as bucket does.
+    """Verify a repeated un-aliased aggregation lets the last one win,
+    as bucket does.
 
-    Mutation: suffixing the two results into b_x and b_y and keeping
-        both, or moving the survivor to the end of the column order.
-    Oracle: differential against DataSet.bucket - one 'b' column still
-        between key and c, holding the maxima [3, 4] rather than the
-        sums [5, 4].
+    Mutation: either side applying the aggregations in reverse, or
+        rejecting the pair, so the documented drop-in twins disagree on a
+        caller's override.
+    Oracle: differential against DataSet.bucket - both keep the maxima
+        [3, 4]; aliased, both give the sums [5, 4] beside them.
     """
     rows = df_two_groups.to_dict('records')
     aggs = [('b', sum), ('b', max), ('c', sum)]
 
-    frame = bucket_dataframe(df_two_groups, 'key', aggs)
-    bucketed = DataSet([dict(r) for r in rows]).bucket('key', list(aggs))
+    frame_last = bucket_dataframe(df_two_groups, 'key', aggs)
+    bucket_last = DataSet([dict(r) for r in rows]).bucket('key', list(aggs))
 
-    assert list(frame.columns) == bucketed.cols == ['key', 'b', 'c']
-    assert frame['b'].tolist() == [row['b'] for row in bucketed] == [3, 4]
+    assert frame_last['b'].tolist() == [row['b'] for row in bucket_last] == [3, 4]
+
+    aliased = [('b', sum, 'b_sum'), ('b', max, 'b_max'), ('c', sum)]
+    frame = bucket_dataframe(df_two_groups, 'key', aliased)
+    bucketed = DataSet([dict(r) for r in rows]).bucket('key', list(aliased))
+
+    assert list(frame.columns) == bucketed.cols == ['key', 'b_sum', 'b_max', 'c']
+    assert frame['b_sum'].tolist() == [row['b_sum'] for row in bucketed] == [5, 4]
+    assert frame['b_max'].tolist() == [row['b_max'] for row in bucketed] == [3, 4]
 
 
 def test_bucket_dataframe_no_aggregations_returns_the_sorted_distinct_keys():

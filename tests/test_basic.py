@@ -27,7 +27,7 @@ import pytest
 from opendate import DateTime
 from rollups import DataSet, find
 
-from libb import attrdict
+from libb import attrdict, lazydict
 
 # --- Fixtures ---
 
@@ -1263,3 +1263,119 @@ def test_sample_keeps_a_driver_timezone():
 
     assert picked[0]['c'].utcoffset() == datetime.timedelta(hours=-4)
     assert picked[0]['c'] == source
+
+
+def test_to_list_reads_declared_columns_not_row_key_order():
+    """Verify a column's tuple holds that column's values, whatever the
+    order a row happens to store its keys in.
+
+    Mutation: transposing row.values() rather than reading each declared
+        column by name, which swaps two columns' tuples as soon as one
+        row stores its keys in a different order.
+    Oracle: differential against to_array, which reads by name, plus the
+        hand-computed [(1, 2), (10, 20), (100, 200)].
+    """
+    ds = DataSet([{'a': 1, 'b': 10, 'c': 100}],
+                 columns=[('a', int), ('b', int), ('c', int)])
+    ds.append({'a': 2, 'c': 200, 'b': 20})
+
+    assert ds.to_list() == [(1, 2), (10, 20), (100, 200)]
+    assert ds.to_list() == [tuple(col) for col in ds.to_array().T.tolist()]
+
+
+def test_eq_answers_false_for_a_non_dataset():
+    """Verify comparing against another type is False, not an error.
+
+    Mutation: reading other.container without a type guard, which raises
+        AttributeError naming an attribute the caller never mentioned.
+    Oracle: the literal False and True, and membership in a mixed list,
+        which Python resolves through __eq__.
+    """
+    ds = DataSet([{'a': 1}], columns=[('a', int)])
+
+    assert (ds == None) is False  # noqa: E711
+    assert (ds != None) is True  # noqa: E711
+    # A list, not a set: set membership hashes the left operand, and a
+    # class defining __eq__ without __hash__ is unhashable.
+    assert ds not in [1, 'x']  # noqa: PLR6201
+    assert ds == DataSet([{'a': 1}], columns=[('a', int)])
+
+
+def test_rename_column_of_an_undeclared_key_leaves_a_declared_column_alone():
+    """Verify renaming an undeclared row key cannot land on a declared
+    column and overwrite it.
+
+    Mutation: guarding only the schema branches and leaving the row loop
+        unguarded, so an undeclared key overwrites the declared column it
+        is renamed onto, unconverted.
+    Oracle: column b keeps its hand-written [2, 4] rather than taking the
+        undeclared key's 99.
+    """
+    ds = DataSet([{'a': 1, 'b': 2}, {'a': 3, 'b': 4}],
+                 columns=[('a', int), ('b', int)])
+    ds.container[1]['k'] = 99
+
+    ds.rename_column('k', 'b')
+
+    assert ds.cols == ['a', 'b']
+    assert [row['b'] for row in ds.container] == [2, 4]
+
+
+def test_add_leaves_the_right_operand_untouched():
+    """Verify `a + b` reads b without rewriting b's own rows.
+
+    Mutation: extending with the right operand's own row objects, so
+        extend's in-place conversion re-coerces them to the LEFT
+        operand's declared types and the caller's b is changed.
+    Oracle: b keeps its hand-written floats [2.7, 3.4] totalling 6.1,
+        against the [2, 3] that conversion to the left's int column
+        leaves; and b gains no column it never declared.
+    """
+    a = DataSet([{'k': 'p', 'amount': 1}], columns=[('k', str), ('amount', int)])
+    b = DataSet([{'k': 'q', 'amount': 2.7}, {'k': 'r', 'amount': 3.4}],
+                columns=[('k', str), ('amount', float)])
+
+    joined = a + b
+
+    assert [row['amount'] for row in b.container] == [2.7, 3.4]
+    assert len(joined.container) == 3
+
+    wide = DataSet([{'k': 'p', 'extra': 5}], columns=[('k', str), ('extra', int)])
+    narrow = DataSet([{'k': 'q'}], columns=[('k', str)])
+
+    _ = wide + narrow
+
+    assert 'extra' not in narrow.container[0]
+
+
+def test_to_list_answers_none_for_a_column_a_row_lacks():
+    """Verify a row missing a declared column contributes None, not a raise.
+
+    A row appended straight to `.container` bypasses the conversion that
+    fills declared columns, and an earlier read arms the converted
+    snapshot so `ensure_types` returns early.
+
+    Mutation: reading through the row's own subscript, which raises
+        KeyError where the docstring promises None.
+    Oracle: hand-computed [(1, 3), (2, None)] for two declared columns
+        over a full row and a sparse one.
+    """
+    ds = DataSet([{'a': 1, 'b': 2}], columns=[('a', int), ('b', int)])
+    ds.to_list()
+    ds.container.append(lazydict({'a': 3}))
+
+    assert ds.to_list() == [(1, 3), (2, None)]
+
+
+def test_add_accepts_every_row_shape_extend_accepts():
+    """Verify `+` takes the row shapes `extend` takes.
+
+    Mutation: copying each row through a method only a mapping carries,
+        which rejects the pair sequence lazydict() would have accepted.
+    Oracle: 2 rows out, the appended one holding the hand-written 3.
+    """
+    ds = DataSet([{'x': 1}], columns=[('x', int)])
+
+    joined = ds + [(('x', 3),)]
+
+    assert [row['x'] for row in joined.container] == [1, 3]

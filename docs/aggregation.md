@@ -51,7 +51,9 @@ ds.bucket('key', [('c', max, fn)])
 ```
 
 Aggregate the same column twice by giving each result its own alias.
-Without an alias the second overwrites the first.
+Without an alias the last one wins, which is how a later entry
+recomputes a column an earlier one wrote. An alias that lands on a key
+column raises `ValueError`.
 
 ### Types
 

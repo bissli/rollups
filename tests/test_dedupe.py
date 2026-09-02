@@ -608,3 +608,62 @@ def test_dedupe_single_column_dataset():
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+
+
+def test_dedupe_result_does_not_write_through_to_the_source():
+    """Verify the result holds its own rows, so editing it leaves the
+    source alone.
+
+    Mutation: returning the surviving row objects rather than copies, so
+        any per-row writer on the result reaches into the source.
+    Oracle: the source still carries the column it declares, with its
+        hand-written values [10, 20, 30], after the result drops it.
+    """
+    src = DataSet([{'k': 1, 'label': 'x', 'amount': 10},
+                   {'k': 1, 'label': 'y', 'amount': 20},
+                   {'k': 2, 'label': 'x', 'amount': 30}],
+                  columns=[('k', int), ('label', str), ('amount', int)])
+
+    uq = src.dedupe('k')
+    uq.remove_column('label')
+
+    assert src.cols == ['k', 'label', 'amount']
+    assert [row['label'] for row in src.container] == ['x', 'y', 'x']
+    assert [row['amount'] for row in src.container] == [10, 20, 30]
+
+
+def test_dedupe_collapses_rows_sharing_a_nan_key():
+    """Verify a NaN key dedupes to one row rather than surviving twice.
+
+    Mutation: grouping on the raw value, so two separately produced NaNs
+        land in different buckets and dedupe returns both. One NaN object
+        reused would hide this behind CPython's dict identity shortcut,
+        so each row builds its own.
+    Oracle: hand-computed 2 rows out of 3 in, the NaN key keeping its
+        first row's amount 1.
+    """
+    ds = DataSet([{'k': float('nan'), 'amount': 1},
+                  {'k': float('nan'), 'amount': 2},
+                  {'k': 5.0, 'amount': 3}],
+                 columns=[('k', float), ('amount', int)])
+
+    out = [dict(row) for row in ds.dedupe('k')]
+
+    assert len(out) == 2
+    assert sorted(row['amount'] for row in out) == [1, 3]
+
+
+def test_dedupe_with_a_filter_orders_a_none_key_instead_of_raising():
+    """Verify a None key sorts with its own kind, as bucket already does.
+
+    Mutation: ordering the group keys by raw value, so None is compared
+        against a number and the sort raises TypeError.
+    Oracle: hand-computed - both groups survive, the numeric key keeping
+        the row its filter matched and the None key keeping its only row.
+    """
+    ds = DataSet([{'k': 5.0, 'v': 3}, {'k': 5.0, 'v': 9}, {'k': None, 'v': 4}],
+                 columns=[('k', float), ('v', int)])
+
+    out = [dict(row) for row in ds.dedupe('k', filter_fn=lambda r: r['v'] > 5)]
+
+    assert sorted(row['v'] for row in out) == [4, 9]

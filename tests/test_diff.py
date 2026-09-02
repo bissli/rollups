@@ -1466,11 +1466,13 @@ def test_diff_column_overwrites_existing():
 
 
 def test_diff_datasets_none_in_key_column():
-    """A None key reaches the sort and raises, rather than passing.
+    """Verify a None key sorts with its own kind rather than raising.
 
-    Mutation: for key in ds1_map at join.py, dropping the
-        sort, which would silently accept the None key.
-    Oracle: sorted() over (None,) and (1,) raises TypeError.
+    Mutation: ordering the keys by raw value, which compares None
+        against a number and raises TypeError, as bucket and dedupe
+        would without their own rank.
+    Oracle: hand-computed - the None key differs on value, giving
+        (200, 250), and the 1 key matches.
     """
     ds1 = DataSet([
         {'id': 1, 'value': 100},
@@ -1481,8 +1483,13 @@ def test_diff_datasets_none_in_key_column():
         {'id': None, 'value': 250},
     ])
 
-    with pytest.raises(TypeError):
-        diff_datasets(ds1, ds2, ['id'], ['value'])
+    same, diff, only1, only2 = diff_datasets(ds1, ds2, ['id'], ['value'])
+
+    assert len(same) == 1
+    assert same[0]['id'] == 1
+    assert len(diff) == 1
+    assert diff[0]['id'] is None
+    assert diff[0]['value'] == (200, 250)
 
 
 def test_diff_preserves_row_order_after_operation():
@@ -1648,3 +1655,26 @@ def test_pct_change_declares_a_float_column_that_survives_reconstruction():
 
 if __name__ == '__main__':
     pytest.main([__file__])
+
+
+def test_diff_datasets_handles_a_nan_key_without_leaking_the_token():
+    """Verify a NaN key diffs, and the returned row carries the NaN.
+
+    Mutation: sorting the tokenized keys raw, which compares the token
+        against a number and raises; or building the returned row from
+        the tokenized key, which hands the caller the private token.
+    Oracle: hand-computed - the 1.0 key differs, the NaN key matches, and
+        the returned key value is a NaN rather than an opaque object.
+    """
+    a = DataSet([{'k': 1.0, 'v': 1}, {'k': float('nan'), 'v': 7}],
+                columns=[('k', float), ('v', int)])
+    b = DataSet([{'k': 1.0, 'v': 2}, {'k': float('nan'), 'v': 7}],
+                columns=[('k', float), ('v', int)])
+
+    same, diff, only1, only2 = diff_datasets(a, b, ['k'], ['v'])
+
+    assert len(diff) == 1
+    assert diff[0]['v'] == (1, 2)
+    assert diff[0]['k'] == 1.0
+    assert len(same) == 1
+    assert same[0]['k'] != same[0]['k']

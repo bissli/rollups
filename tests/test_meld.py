@@ -863,3 +863,38 @@ def test_meld_out_of_place_keeps_a_driver_timezone():
 
 if __name__ == '__main__':
     pytest.main([__file__])
+
+
+def test_meld_raises_when_the_parallel_lists_disagree_in_length():
+    """Verify a short melders, ids or columns list is an error, not a
+    silent truncation.
+
+    Mutation: zipping the three lists without a length check, which drops
+        the unpaired tail and pairs the surviving prefix with the wrong
+        dataset's values.
+    Oracle: the hand-computed [10, 20] that the second melder holds is
+        absent from the result, and the message names the three lengths.
+    """
+    meldee = DataSet([{'a': 1}, {'a': 2}], columns=[('a', int)])
+    one = DataSet([{'b': 10}, {'b': 20}], columns=[('b', int)])
+    two = DataSet([{'b': 30}, {'b': 40}], columns=[('b', int)])
+
+    with pytest.raises(ValueError, match='melders'):
+        meld_datasets(meldee, [one, two], ['p', 'q'], [['b']])
+
+
+def test_meld_reads_a_bare_string_column_entry_as_one_name():
+    """Verify a bare string names one column, not its characters.
+
+    Mutation: leaving a `columns` entry unnormalized, so a string
+        iterates into one all-None column per character.
+    Oracle: the single melded column carries the hand-written 9, against
+        the six character-named columns iteration produces.
+    """
+    base = DataSet([{'a': 1}], columns=[('a', int)])
+    other = DataSet([{'amount': 9}], columns=[('amount', int)])
+
+    out = meld_datasets(base, [other], ['p'], ['amount'], inplace=False)
+
+    assert out.cols == ['a', 'p_amount']
+    assert out[0]['p_amount'] == 9

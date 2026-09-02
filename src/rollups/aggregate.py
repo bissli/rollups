@@ -27,6 +27,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_NAN_KEY = object()
+
+
+def _keyed(val):
+    """Answer the value a row key groups on, with a NaN given a token.
+    """
+    if isinstance(val, tuple):
+        return tuple(_keyed(item) for item in val)
+    return _NAN_KEY if isinstance(val, float) and val != val else val  # noqa: PLR0124
+
 
 def bucket_dataset(dataset: 'DataSet', keycols: str | list[str],
                    aggregations: list[tuple[str, Callable, Callable] | str]
@@ -53,17 +63,28 @@ def bucket_dataset(dataset: 'DataSet', keycols: str | list[str],
     DataSet
         One row per key combination, with the aggregated values.
 
+    Raises
+    ------
+    ValueError
+        If an aggregation tuple is empty or longer than four items, or
+        if an aggregation would land on a key column's name.
+
     Notes
     -----
     - A bare column name sums it, skipping None.
     - A filter receives the group's rows and returns the values to
       aggregate; return a one-item fallback list rather than an empty
       one, or the operation has nothing to work on.
-    - Aggregating one column twice needs an alias on each, or the
-      second overwrites the first.
+    - Two aggregations writing one output column leave the last one's
+      result, so a later entry replaces what an earlier one wrote. Each
+      reads the source rows, not the bucket, so the later one computes
+      independently rather than from the earlier result. Give each an
+      alias to keep both.
     - The result column keeps the source type unless the operation
       changed it; an unknown source type is inferred from the first
       non-None result.
+    - A None key and a NaN key are two groups, since they are two
+        values. `bucket_dataframe` merges them, as pandas does.
     - See docs/aggregation.md for the format table and examples.
     """
     dataset.ensure_types()
@@ -164,25 +185,47 @@ def bucket_dataset(dataset: 'DataSet', keycols: str | list[str],
     keycols = list(keycols) if isinstance(keycols, list | tuple) else [keycols]
     data = dataset.container[:]
 
+    aliases = [alias for *_, alias in aggcols]
+    shadowed = sorted({a for a in aliases if a in set(keycols)}, key=str)
+    if shadowed:
+        raise ValueError(
+            f'Aggregation {", ".join(map(repr, shadowed))} would overwrite '
+            'a key column; give it an alias')
+
     # Sort for grouping with a functional key
+    def rank(val):
+        """Order one key value, so equal keys sort adjacently.
+
+        Notes
+        -----
+        - groupby merges only neighbours, so this has to agree with
+          `keyfn` on which values count as equal. A tuple recurses for
+          that reason: a NaN nested in a composite key is tokenized
+          there and must rank the same way here.
+        - An unhashable value keeps its existing arm, which leaves equal
+          keys adjacent only where the input already had them.
+        """
+        if val is None:
+            return (1, None)
+        if isinstance(val, float) and val != val:  # noqa: PLR0124
+            return (2, None)
+        if isinstance(val, tuple):
+            return (0, tuple(rank(item) for item in val))
+        return (0, val) if isinstance(val, Hashable) else (0, None)
+
     def sort_key(row):
-        key = []
-        for col in keycols:
-            val = row[col]
-            key.append((val is None, val) if isinstance(val, Hashable)
-                       else (False, None))
-        return tuple(key)
+        return tuple(rank(row[col]) for col in keycols)
 
     data.sort(key=sort_key)
 
     # Group function
-    keyfn = lambda row: tuple(row[col] for col in keycols)
+    keyfn = lambda row: tuple(_keyed(row[col]) for col in keycols)
 
     # Process each group and apply aggregations
     buckets = []
-    for key, grouped in itertools.groupby(data, keyfn):
+    for _, grouped in itertools.groupby(data, keyfn):
         rows = list(grouped)
-        bucket = lazydict(zip(keycols, key))
+        bucket = lazydict((col, rows[0][col]) for col in keycols)
         for col, op, filt, alias in aggcols:
             bucket[alias] = op(filt(rows))
         buckets.append(bucket)

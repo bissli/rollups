@@ -39,6 +39,47 @@ from .types import TIME_VALUE_TYPES
 
 logger = logging.getLogger(__name__)
 
+_NAN_KEY = object()
+
+
+def _keyable(val):
+    """Answer a row key a dict can key on, with a NaN given a token.
+
+    Parameters
+    ----------
+    val : Any
+        One key value, or a tuple of them for a composite key.
+
+    Returns
+    -------
+    Any
+        `val` unchanged, except that every NaN in it becomes a token.
+    """
+    if isinstance(val, tuple):
+        return tuple(_keyable(item) for item in val)
+    return _NAN_KEY if isinstance(val, float) and val != val else val  # noqa: PLR0124
+
+
+def _key_order(key):
+    """Answer a sort key for a keyed row, ordering None then NaN last.
+
+    Notes
+    -----
+    - Ranks rather than compares, since neither None nor a NaN orders
+      against a number. The ranks match `bucket`'s own sort.
+    """
+    items = key if isinstance(key, tuple) else (key,)
+    order = []
+    for item in items:
+        if item is None:
+            order.append((1, None))
+        elif item is _NAN_KEY:
+            order.append((2, None))
+        else:
+            order.append((0, item))
+    return tuple(order)
+
+
 # A column whose values span one of these families types as that
 # family's widest member. One spanning two of them, or holding any
 # other pair, types as `object` and converts nothing.
@@ -197,6 +238,8 @@ class DataSet:
         return f'{self.__class__.__name__}(cols={len(self.cols)}, rows={len(self.container)})'
 
     def __eq__(self, other):
+        if not isinstance(other, DataSet):
+            return NotImplemented
         return self.container == other.container
 
     #
@@ -375,8 +418,34 @@ class DataSet:
                 return self.container.pop(i)
 
     def __add__(self, other) -> Self:
+        """Answer a new dataset holding this one's rows then `other`'s.
+
+        Parameters
+        ----------
+        other : DataSet or list of lazydict
+            Rows to place after this dataset's own. Read, not modified.
+
+        Returns
+        -------
+        DataSet
+            A new dataset carrying this one's columns, so `other`'s
+            values convert to them.
+
+        See Also
+        --------
+        rollups.core.DataSet.extend : the same append, in place
+
+        Notes
+        -----
+        - `other`'s rows are copied before they convert. `extend`
+          converts what it is handed in place, which would otherwise
+          rewrite the caller's own values under this dataset's types.
+        - The result shares this dataset's rows, as `copy` does, so a
+          write into one of those rows is seen on both sides.
+        """
         ds = self.copy()
-        ds.extend(other)
+        ds.extend([row.copy() if isinstance(row, lazydict) else lazydict(row)
+                   for row in other])
         return ds
 
     def ensure_types(self) -> None:
@@ -526,20 +595,21 @@ class DataSet:
         if filter_fn is None:
             d = {}
             for i, row in enumerate(self.unwind(*keys)):
-                if row not in d:
-                    d[row] = i
+                keyed = _keyable(row)
+                if keyed not in d:
+                    d[keyed] = i
             ix = set(d.values())
             uq = [row for i, row in enumerate(self) if i in ix]
         else:
             groups = {}
             for row in self:
-                key_vals = tuple(row[k] for k in keys)
+                key_vals = _keyable(tuple(row[k] for k in keys))
                 if key_vals not in groups:
                     groups[key_vals] = []
                 groups[key_vals].append(row)
 
             uq = []
-            for key_vals in sorted(groups.keys()):
+            for key_vals in sorted(groups.keys(), key=_key_order):
                 group_rows = groups[key_vals]
                 matched = False
                 for row in group_rows:
@@ -550,7 +620,8 @@ class DataSet:
                 if not matched:
                     uq.append(group_rows[0])
 
-        return self.__class__(uq, cols=self.cols, typs=self.typs)
+        return self.__class__([row.copy() for row in uq],
+                              cols=self.cols, typs=self.typs)
 
     def itemize(self):
         """Split each row into a DataSet of its own.
@@ -1179,18 +1250,27 @@ class DataSet:
         name : str
             Column to rename. A name not present is a no-op.
         rename : str
-            New name. An existing column of this name is removed first.
+            New name. Where `name` is a declared column, an existing
+            column of this name is removed first; where `name` is only
+            an undeclared row key, an existing column of this name is
+            kept and the rename is skipped.
         """
         if name == rename:
             logger.warning(f'Column {name} matches rename column {rename}')
             return
-        if rename in self.colmap and name in self.colmap:
+        # Read before the branches below: the columns setter drops
+        # `name` from colmap, so the test cannot wait until the loop.
+        source_declared = name in self.colmap
+        if rename in self.colmap and source_declared:
             self.remove_column(rename)
-        if name in self.colmap:
+        if source_declared:
             idx = self.cols.index(name)
             columns = list(self.columns)
             columns[idx] = (rename, columns[idx][1])
             self.columns = columns
+        elif rename in self.colmap:
+            logger.debug(f'{name} not in DataSet columns, {rename} kept')
+            return
         for row in self.container:
             if name in row:
                 row[rename] = row.pop(name, None)
@@ -1447,10 +1527,22 @@ class DataSet:
         Returns
         -------
         list of tuple
-            One tuple per column, holding that column's values in row
-            order.
+            One tuple per declared column, in column order, holding that
+            column's values in row order. Empty for a dataset with no
+            rows, whatever it declares, so the length varies with the
+            row count and not only with the column count.
+
+        Notes
+        -----
+        - Read by name, since a row stores its keys in whatever order it
+          was built with, and an undeclared key is not a column.
+        - A row missing a declared column contributes None for it.
         """
-        return list(zip(*[list(row.values()) for row in self.container]))
+        if not self.container:
+            return []
+        self.ensure_types()
+        return [tuple(dict.get(row, col) for row in self.container)
+                for col in self.cols]
 
     @classmethod
     def from_excel_sheets(cls, *args, **kwargs) -> Self:

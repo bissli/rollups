@@ -1841,3 +1841,94 @@ def test_bucket_counts_no_value_for_a_column_no_row_carries():
     out = ds.bucket('g', [('values', len)])
 
     assert [dict(row) for row in out] == [{'g': 'x', 'values': 1}]
+
+
+def test_bucket_last_aggregation_wins_on_a_shared_output_column():
+    """Verify a later entry recomputes a column an earlier one wrote.
+
+    Two entries naming one output column is a deliberate override: build
+    a column, aggregate more, then redefine it in a later entry.
+
+    Mutation: applying the aggregations in reverse, or rejecting the
+        pair, either of which loses the caller's override.
+    Oracle: hand-computed 5 from max beating the 6 from sum, with the
+        aliased form proving both results are reachable when wanted.
+    """
+    ds = DataSet([{'k': 'x', 'b': 1}, {'k': 'x', 'b': 5}],
+                 columns=[('k', str), ('b', int)])
+
+    assert [dict(row) for row in ds.bucket('k', [('b', sum), ('b', max)])] == [
+        {'k': 'x', 'b': 5}]
+
+    aliased = ds.bucket('k', [('b', sum, 'b_sum'), ('b', max, 'b_max')])
+
+    assert [dict(row) for row in aliased] == [{'k': 'x', 'b_sum': 6, 'b_max': 5}]
+
+
+def test_bucket_raises_when_an_alias_lands_on_a_key_column():
+    """Verify an aggregation may not write a column being grouped by.
+
+    Mutation: dropping the key-shadow check, which lets the aggregate
+        replace the group key in the result row, so the row no longer
+        says which group it is.
+    Oracle: differential against bucket_dataframe, which raises the same
+        way; and the aliased form keeps the key 'x' beside the total 6.
+    """
+    ds = DataSet([{'k': 'x', 'b': 1}, {'k': 'x', 'b': 5}],
+                 columns=[('k', str), ('b', int)])
+
+    with pytest.raises(ValueError, match='would overwrite a key column'):
+        ds.bucket('k', [('b', sum, 'k')])
+
+    assert [dict(row) for row in ds.bucket('k', [('b', sum, 'total')])] == [
+        {'k': 'x', 'total': 6}]
+
+
+def test_bucket_groups_a_nan_key_and_keeps_a_good_key_whole():
+    """Verify a non-finite key groups like any other, and a NaN row
+    between two rows of a real key does not split that key.
+
+    Mutation: keying the grouping on the raw value, so every NaN
+        compares unequal to itself and each NaN row becomes its own
+        group while splitting the key it sits between. Each row builds
+        its own NaN: one object reused would match itself through the
+        identity shortcut in tuple comparison and hide the defect.
+    Oracle: hand-computed 30 for key 1.0 and 4 for the NaN key, against
+        the four one-row groups raw keying leaves.
+    """
+    ds = DataSet([{'k': 1.0, 'amount': 10}, {'k': float('nan'), 'amount': 1},
+                  {'k': 1.0, 'amount': 20}, {'k': float('nan'), 'amount': 3}],
+                 columns=[('k', float), ('amount', int)])
+
+    out = [dict(row) for row in ds.bucket('k', ['amount'])]
+
+    assert len(out) == 2
+    assert [row['amount'] for row in out] == [30, 4]
+    assert out[0]['k'] == 1.0
+    assert out[1]['k'] != out[1]['k']
+
+
+def test_bucket_groups_a_nan_nested_in_a_tuple_key():
+    """Verify equal composite keys holding a NaN land in one group even
+    when another key separates them in the input.
+
+    The two equal-keyed rows are deliberately NOT adjacent. groupby
+    merges only neighbours, so a sort ranking the raw value leaves them
+    apart and each becomes its own group; two adjacent rows would pass
+    against that defect.
+
+    Mutation: ranking the raw key value in sort_key while the group key
+        tokenizes the NaN, so the sort and the grouping disagree.
+    Oracle: differential against dedupe over the same rows, plus the
+        hand-computed 5 for the repeated key and 2 for the other.
+    """
+    rows = [{'k': (float('nan'), 1.0), 'v': 1},
+            {'k': (float('nan'), 2.0), 'v': 2},
+            {'k': (float('nan'), 1.0), 'v': 4}]
+    cols = [('k', object), ('v', int)]
+
+    bucketed = DataSet([dict(r) for r in rows], columns=cols).bucket('k', ['v'])
+    deduped = DataSet([dict(r) for r in rows], columns=cols).dedupe('k')
+
+    assert len(bucketed.container) == len(deduped.container) == 2
+    assert sorted(row['v'] for row in bucketed) == [2, 5]

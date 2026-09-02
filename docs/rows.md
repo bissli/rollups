@@ -130,7 +130,10 @@ list(rows.unwind('g', 'v'))     # a tuple per row
 [dict(row) for row in rows]     # plain dicts
 ```
 
-`to_list` transposes: it answers one tuple per column, not per row.
+`to_list` transposes: it answers one tuple per column, not per row,
+reading each declared column by name whatever order a row stores its
+keys in. A dataset with no rows answers `[]`, so unpack it only after
+checking there are rows.
 
 `unwind` yields a column's values in row order, or a tuple per row for
 several columns. Pair it with `zip` to split several columns into their

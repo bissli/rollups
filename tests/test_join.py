@@ -1189,3 +1189,42 @@ def test_join_with_a_none_key_leaves_both_inputs_intact():
 
     assert [row['x'] for row in a.container] == [1, 2]
     assert [row['y'] for row in b.container] == [9]
+
+
+def test_join_reads_a_bare_string_column_selection_as_one_name():
+    """Verify acol and bcol take a bare string as one column name.
+
+    Mutation: leaving acol and bcol unnormalized where akey and bkey are
+        normalized, so a string iterates into one column per character.
+    Oracle: the selected column carries its value 3.0, and the result
+        holds exactly the key, the selection and the right side's column.
+    """
+    a = DataSet([{'k': 1, 'amount': 3.0, 'skip': 9.0}],
+                columns=[('k', int), ('amount', float), ('skip', float)])
+    b = DataSet([{'k': 1, 'y': 7.0}], columns=[('k', int), ('y', float)])
+
+    joined = DataSet.join(a, 'k', b, 'k', 'left', acol='amount', bcol='y')
+
+    assert sorted(joined.cols) == ['amount', 'y']
+    assert joined[0]['amount'] == 3.0
+    assert joined[0]['y'] == 7.0
+
+
+def test_join_pairs_a_nan_key_like_any_other_value():
+    """Verify a NaN key joins its two sides instead of reporting both as
+    missing, whichever objects the two NaNs are.
+
+    Mutation: using the raw value as the bucket key, so two separately
+        produced NaNs never match and an inner join drops the pair while
+        an outer join emits two half rows.
+    Oracle: one inner row carrying both sides, against the hand-written
+        'p' and 'q'; and the same answer for two distinct NaN objects.
+    """
+    a = DataSet([{'k': float('nan'), 'a': 'p'}], columns=[('k', float), ('a', str)])
+    b = DataSet([{'k': float('nan'), 'b': 'q'}], columns=[('k', float), ('b', str)])
+
+    joined = DataSet.join(a, 'k', b, 'k', 'inner')
+
+    assert len(joined.container) == 1
+    assert joined[0]['a'] == 'p'
+    assert joined[0]['b'] == 'q'

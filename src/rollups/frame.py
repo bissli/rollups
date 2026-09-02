@@ -330,7 +330,7 @@ def bucket_dataframe(
     ValueError
         If an aggregation tuple is empty or longer than four items, if
         a named key or aggregation column is absent from `df`, if `df`
-        repeats a column name, or if an aggregation would land on a key
+        repeats a column name, if an aggregation would land on a key
         column's name.
 
     Notes
@@ -350,9 +350,12 @@ def bucket_dataframe(
     - An op that raises TypeError or ValueError aggregates to null,
       except over uniform sets, frozensets, lists, or tuples, which are
       merged into one of their own kind.
-    - Groups come back in sorted key order with the null key last.
-    - Aggregating one column twice needs an alias on each. Without one
-      the second overwrites the first, keeping the first's position.
+    - Groups come back in sorted key order with the null key last. A
+      None key and a NaN key merge into one group, as pandas does,
+      where `DataSet.bucket` keeps them apart.
+    - Two aggregations writing one output column leave the last one's
+      result, keeping the first's position. Give each an alias to keep
+      both.
     """
 
     def parse_aggregation(agg: Any) -> tuple[str, Callable, Callable | None, str]:
