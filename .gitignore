@@ -3,3 +3,4 @@ poetry.lock
 bench/
 bench.json
 BUGREPORT-*.md
+FEATUREREQUEST-*.md
