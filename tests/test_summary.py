@@ -4,6 +4,8 @@ import pytest
 from opendate import UTC, Date, DateTime
 from rollups import DataSet
 
+from libb import lazydict
+
 # --- Fixtures ---
 
 
@@ -712,6 +714,31 @@ def test_calc_summary_row_with_defaults_totals_numeric_columns():
     row = ds.calc_summary_row()
 
     assert row['b'] == 3
+
+
+def test_calc_summary_row_returns_a_resolving_row_on_both_branches():
+    """Verify the summary row computes a stored callable, rows or no rows.
+
+    The declared return type is the row class, and the two branches build
+    it differently: one copies a bucket result, the other constructs one.
+    A copy that erased the class would leave a caller a summary row that
+    hands a computed column back as a function.
+
+    Mutation: building the populated branch through a copy that returns
+        the base mapping class instead of the row class.
+    Oracle: hand-computed 3 = 1 + 2 through the stored callable, on the
+        row from each branch, plus the declared type of both.
+    """
+    populated = DataSet([{'g': 'x', 'v': 1.0}, {'g': 'x', 'v': 2.0}],
+                        columns=[('g', str), ('v', float)]).calc_summary_row()
+    empty = DataSet([], columns=[('g', str), ('v', float)]).calc_summary_row()
+
+    for row in (populated, empty):
+        assert isinstance(row, lazydict)
+        row['x'] = 1
+        row['y'] = 2
+        row['computed'] = lambda r: r.x + r.y
+        assert row.computed == 3
 
 
 if __name__ == '__main__':
